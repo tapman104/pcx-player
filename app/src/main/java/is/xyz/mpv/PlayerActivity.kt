@@ -11,7 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.material3.MaterialTheme
+import `is`.xyz.mpv.ui.PotatoTheme
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -51,7 +51,7 @@ class PlayerActivity : ComponentActivity() {
         collectOrientationState()
 
         setContent {
-            MaterialTheme {
+            PotatoTheme {
                 PlayScreen(
                     viewModel = viewModel,
                     onBackClick = { finish() },

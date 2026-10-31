@@ -9,7 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
+import `is`.xyz.mpv.ui.PotatoTheme
 
 /**
  * File picker / launcher only. Does not host the player UI — selecting or
@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
 
         setContent {
-            MaterialTheme {
+            PotatoTheme {
                 HomeScreen(
                     onOpenFileClick = {
                         openDocumentLauncher.launch(arrayOf("video/*"))
