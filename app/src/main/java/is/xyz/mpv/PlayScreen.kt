@@ -1,6 +1,7 @@
 package `is`.xyz.mpv
 
 import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -33,12 +34,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import `is`.xyz.mpv.ui.AudioTrackDialog
+import `is`.xyz.mpv.ui.AudioTrackSheet
 import `is`.xyz.mpv.ui.GestureIndicator
 import `is`.xyz.mpv.ui.GestureIndicatorOverlay
 import `is`.xyz.mpv.ui.PlayerBottomBar
 import `is`.xyz.mpv.ui.PlayerTopBar
-import `is`.xyz.mpv.ui.SubtitleTrackDialog
+import `is`.xyz.mpv.ui.SubtitleTrackSheet
 import `is`.xyz.mpv.ui.VideoSurface
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -104,6 +105,11 @@ fun PlayScreen(
         if (activeDialog != TrackDialogType.NONE) {
             hideJob?.cancel()
         }
+    }
+
+    BackHandler(enabled = activeDialog != TrackDialogType.NONE) {
+        activeDialog = TrackDialogType.NONE
+        resetHideTimer()
     }
 
     val handleBack: () -> Unit = onBackClick ?: {
@@ -288,46 +294,41 @@ fun PlayScreen(
             modifier = Modifier.align(Alignment.Center)
         )
 
-        // Track Selection Dialogs
-        when (activeDialog) {
-            TrackDialogType.AUDIO -> {
-                AudioTrackDialog(
-                    tracks = uiState.trackState.audioTracks,
-                    selectedTrackId = uiState.trackState.selectedAudioId,
-                    onSelect = { trackId ->
-                        viewModel.selectAudioTrack(trackId)
-                        activeDialog = TrackDialogType.NONE
-                        resetHideTimer()
-                    },
-                    onDismissRequest = {
-                        activeDialog = TrackDialogType.NONE
-                        resetHideTimer()
-                    }
-                )
+        AudioTrackSheet(
+            visible = activeDialog == TrackDialogType.AUDIO,
+            tracks = uiState.trackState.audioTracks,
+            selectedTrackId = uiState.trackState.selectedAudioId,
+            onSelect = { trackId ->
+                viewModel.selectAudioTrack(trackId)
+                activeDialog = TrackDialogType.NONE
+                resetHideTimer()
+            },
+            onDismiss = {
+                activeDialog = TrackDialogType.NONE
+                resetHideTimer()
             }
-            TrackDialogType.SUBTITLE -> {
-                SubtitleTrackDialog(
-                    tracks = uiState.trackState.subtitleTracks,
-                    selectedTrackId = uiState.trackState.selectedSubtitleId,
-                    onSelect = { trackId ->
-                        viewModel.selectSubtitleTrack(trackId)
-                        activeDialog = TrackDialogType.NONE
-                        resetHideTimer()
-                    },
-                    onDismissRequest = {
-                        activeDialog = TrackDialogType.NONE
-                        resetHideTimer()
-                    },
-                    subFontSize = subFontSize,
-                    subPos = subPos,
-                    onFontSizeChange = { viewModel.previewSubFontSize(it) },
-                    onFontSizeCommit = { viewModel.commitSubFontSize(it) },
-                    onPosChange = { viewModel.previewSubPos(it) },
-                    onPosCommit = { viewModel.commitSubPos(it) },
-                )
-            }
-            TrackDialogType.NONE -> Unit
-        }
+        )
+
+        SubtitleTrackSheet(
+            visible = activeDialog == TrackDialogType.SUBTITLE,
+            tracks = uiState.trackState.subtitleTracks,
+            selectedTrackId = uiState.trackState.selectedSubtitleId,
+            onSelect = { trackId ->
+                viewModel.selectSubtitleTrack(trackId)
+                activeDialog = TrackDialogType.NONE
+                resetHideTimer()
+            },
+            onDismiss = {
+                activeDialog = TrackDialogType.NONE
+                resetHideTimer()
+            },
+            subFontSize = subFontSize,
+            subPos = subPos,
+            onFontSizeChange = { viewModel.previewSubFontSize(it) },
+            onFontSizeCommit = { viewModel.commitSubFontSize(it) },
+            onPosChange = { viewModel.previewSubPos(it) },
+            onPosCommit = { viewModel.commitSubPos(it) },
+        )
     }
 }
 
