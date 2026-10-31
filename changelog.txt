@@ -302,3 +302,8 @@ fix(gestures): clamp zoom scaling, suppress edge swipe conflicts, and fix HUD le
 - Suppress swipe gestures starting near screen edges in PlayerGestureHandler to prevent system gesture conflicts
 - Ensure long-press speed boost reliably resets on gesture cancel or release via finally block
 - Ignore micro-jitter in pinch zoom gesture detection
+
+
+01.11.2026
+
+fixed seek bar slide confict with the gestures 

@@ -69,8 +69,8 @@ fun Modifier.playerGestureHandler(
     return this
         // Tap/long-press and swipe/pinch are in separate pointerInput modifiers so that
         // detectTapGestures can own its tap disambiguation timing independently of the
-        // awaitEachGesture loop. Both modifiers use requireUnconsumed = false on the initial
-        // down so that neither starves the other.
+        // awaitEachGesture loop. Both modifiers require unconsumed down events so that controls
+        // drawn on top (such as the seekbar Slider) take precedence and are not hijacked.
         .pointerInput(Unit) {
             var longPressActive = false
             var speedBeforeLongPress = 1f
@@ -114,7 +114,7 @@ fun Modifier.playerGestureHandler(
                 var maxVolume = 1
                 var startBrightness = 0.5f
 
-                val firstDownPosition = awaitFirstDown(requireUnconsumed = false).position
+                val firstDownPosition = awaitFirstDown(requireUnconsumed = true).position
 
                 do {
                     val event = awaitPointerEvent()

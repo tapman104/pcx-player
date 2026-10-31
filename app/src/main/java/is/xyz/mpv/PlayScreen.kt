@@ -131,10 +131,7 @@ fun PlayScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Mid layer: unified gesture surface.
-        // playerGestureHandler uses detectTapGestures (requireUnconsumed = true) for taps/long-press
-        // and awaitEachGesture (requireUnconsumed = false) for swipe/pinch, so interactive controls
-        // drawn above (IconButton, Slider) still consume their own down events without interference.
+        // Mid layer: unified gesture surface
         Box(
             modifier = Modifier
                 .fillMaxSize()
