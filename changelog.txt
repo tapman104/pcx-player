@@ -312,3 +312,11 @@ ix(player): prevent gesture conflicts and keep controls visible during seek bar 
 
 
 feat(player): display seek delta and target position in gesture indicator overlay
+
+
+fix(lifecycle): fix initialization-failure finalization race in MpvEngine
+
+- Add successStatus parameter to performDestruction() defaulting to NotStarted
+- Transition directly to Failed in initialize() failure path without intermediate NotStarted window
+- Remove redundant synchronized block in initialize() following performDestruction()
+- Move MPVLibTestDouble.onDestroy hook post-native destruction and add unit test verifying race prevention
