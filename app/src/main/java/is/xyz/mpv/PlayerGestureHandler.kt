@@ -66,13 +66,14 @@ fun Modifier.playerGestureHandler(
     val currentOnVolumeChange = rememberUpdatedState(onVolumeChange)
     val currentOnBrightnessChange = rememberUpdatedState(onBrightnessChange)
 
+    var longPressActive = false
+
     return this
         // Tap/long-press and swipe/pinch are in separate pointerInput modifiers so that
         // detectTapGestures can own its tap disambiguation timing independently of the
         // awaitEachGesture loop. Both modifiers require unconsumed down events so that controls
         // drawn on top (such as the seekbar Slider) take precedence and are not hijacked.
         .pointerInput(Unit) {
-            var longPressActive = false
             var speedBeforeLongPress = 1f
 
             detectTapGestures(
@@ -121,6 +122,7 @@ fun Modifier.playerGestureHandler(
                     val pressedCount = event.changes.count { it.pressed }
 
                     if (pressedCount == 0) break
+                    if (longPressActive) continue
 
                     val pan = event.calculatePan()
                     val zoom = event.calculateZoom()

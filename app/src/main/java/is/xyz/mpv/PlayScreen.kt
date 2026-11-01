@@ -31,7 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import `is`.xyz.mpv.ui.AudioTrackSheet
@@ -75,6 +77,9 @@ fun PlayScreen(
     var indicator by remember { mutableStateOf<GestureIndicator?>(null) }
     val coroutineScope = rememberCoroutineScope()
     var hideJob by remember { mutableStateOf<Job?>(null) }
+    var topBarHeight by remember { mutableStateOf(0.dp) }
+    var bottomBarHeight by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
 
     fun resetHideTimer() {
         hideJob?.cancel()
@@ -95,6 +100,10 @@ fun PlayScreen(
 
     LaunchedEffect(controlsVisible) {
         onControlsVisibilityChanged?.invoke(controlsVisible)
+        if (!controlsVisible) {
+            topBarHeight = 0.dp
+            bottomBarHeight = 0.dp
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -135,6 +144,7 @@ fun PlayScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(top = topBarHeight, bottom = bottomBarHeight)
                 .playerGestureHandler(
                     onSingleTap = {
                         if (activeDialog == TrackDialogType.NONE) {
@@ -226,6 +236,11 @@ fun PlayScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
+                .onGloballyPositioned {
+                    if (controlsVisible) {
+                        topBarHeight = with(density) { it.size.height.toDp() }
+                    }
+                }
         ) {
             PlayerTopBar(
                 title = uiState.currentFileName,
@@ -260,6 +275,11 @@ fun PlayScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
+                .onGloballyPositioned {
+                    if (controlsVisible) {
+                        bottomBarHeight = with(density) { it.size.height.toDp() }
+                    }
+                }
         ) {
             PlayerBottomBarHost(
                 playbackProgressFlow = viewModel.playbackProgress,
@@ -271,7 +291,6 @@ fun PlayScreen(
                 },
                 onSeekStarted = {
                     hideJob?.cancel()
-                    controlsVisible = false
                 },
                 modifier = Modifier.fillMaxWidth()
             )
