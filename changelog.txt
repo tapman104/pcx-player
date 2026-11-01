@@ -307,3 +307,8 @@ fix(gestures): clamp zoom scaling, suppress edge swipe conflicts, and fix HUD le
 01.11.2026
 
 fixed seek bar slide confict with the gestures 
+
+ix(player): prevent gesture conflicts and keep controls visible during seek bar drag
+
+
+feat(player): display seek delta and target position in gesture indicator overlay
