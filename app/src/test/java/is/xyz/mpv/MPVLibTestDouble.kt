@@ -14,11 +14,16 @@ object MPVLib {
     var simulatePostCreateFailure: Boolean = false
     var simulateDestroyFailure: Boolean = false
     var destroyCallCount: Int = 0
+    var createCallCount: Int = 0
+    var isCreated: Boolean = false
+    var onDestroy: (() -> Unit)? = null
 
     fun create(appctx: Context?) {
+        createCallCount++
         if (simulateInitFailure) {
             throw RuntimeException("Simulated MPVLib.create failure")
         }
+        isCreated = true
     }
 
     fun init() {
@@ -29,9 +34,14 @@ object MPVLib {
 
     fun destroy() {
         destroyCallCount++
+        if (!isCreated) {
+            throw IllegalStateException("destroy() called with no native instance owned")
+        }
         if (simulateDestroyFailure) {
             throw RuntimeException("Simulated MPVLib.destroy failure")
         }
+        isCreated = false
+        onDestroy?.invoke()
     }
     val attachedSurfaces = mutableListOf<Surface>()
     val loadedFiles = mutableListOf<String>()
@@ -100,6 +110,9 @@ object MPVLib {
         simulatePostCreateFailure = false
         simulateDestroyFailure = false
         destroyCallCount = 0
+        createCallCount = 0
+        isCreated = false
+        onDestroy = null
         // FIX CHECK-A: Reset lifecycle guard between unit tests
         MpvLifecycleGuard.resetForTesting()
     }

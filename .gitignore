@@ -82,3 +82,4 @@ temp_verify/
 changelog.txt
 classes_trimmed.jar
 classes.jar
+jni/x86_64/libplayer.so

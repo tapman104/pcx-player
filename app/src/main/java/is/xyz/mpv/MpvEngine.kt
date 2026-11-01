@@ -24,6 +24,7 @@ sealed interface EngineStatus {
     data object NotStarted : EngineStatus
     data object Starting : EngineStatus
     data object Ready : EngineStatus
+    data object Destroying : EngineStatus
     data class Failed(val reason: String) : EngineStatus
     data class DestroyFailed(val reason: String, val retried: Boolean = false) : EngineStatus
 }
@@ -61,27 +62,27 @@ open class MpvEngine(
      * Call this once before the view is shown.
      */
     fun initialize(configDir: String, cacheDir: String) {
+        var nativeCreated = false
+        var initException: Throwable? = null
+
         synchronized(lock) {
             if (_status.value is EngineStatus.DestroyFailed) {
                 Log.e(TAG, "initialize called when engine is in DestroyFailed status")
                 return
             }
-            if (_status.value is EngineStatus.Ready || _status.value is EngineStatus.Starting) {
+            if (_status.value is EngineStatus.Ready || _status.value is EngineStatus.Starting || _status.value is EngineStatus.Destroying) {
                 Log.w(TAG, "initialize called when engine is already ${_status.value}")
                 return
             }
             _status.value = EngineStatus.Starting
 
-            var nativeCreated = false
             try {
                 MPVLib.addObserver(this)
                 MPVLib.addObserver(eventHandler)
 
-                // FIX CHECK-A: Route create through MpvLifecycleGuard
                 MpvLifecycleGuard.create(this, appContext.applicationContext)
                 nativeCreated = true
 
-                /* set normal options (user-supplied config can override) */
                 MPVLib.setOptionString("config", "yes")
                 MPVLib.setOptionString("config-dir", configDir)
                 for (opt in arrayOf("gpu-shader-cache-dir", "icc-cache-dir")) {
@@ -91,11 +92,8 @@ open class MpvEngine(
 
                 MPVLib.init()
 
-                /* set hardcoded options */
                 postInitOptions()
-                // could mess up VO init before surfaceCreated() is called
                 MPVLib.setOptionString("force-window", "no")
-                // need to idle at least once for playFile() logic to work
                 MPVLib.setOptionString("idle", "once")
 
                 observeProperties()
@@ -112,26 +110,27 @@ open class MpvEngine(
                 pendingSurface = null
                 filePath = null
                 pendingSurfaceSize = null
-                val reason = e.message ?: "Unknown initialization error"
-                Log.e(TAG, "libmpv initialization failed: $reason", e)
+                initException = e
+                Log.e(TAG, "libmpv initialization failed: ${e.message}", e)
                 MPVLib.removeObserver(this)
                 MPVLib.removeObserver(eventHandler)
-                if (nativeCreated) {
-                    try {
-                        // FIX CHECK-A: Route destroy through MpvLifecycleGuard
-                        MpvLifecycleGuard.destroy(this)
-                        _status.value = EngineStatus.Failed(reason)
-                    } catch (destroyEx: Throwable) {
-                        val destroyReason = destroyEx.message ?: "Unknown destruction error"
-                        Log.e(TAG, "Error destroying MPVLib after init failure: $destroyReason", destroyEx)
-                        _status.value = EngineStatus.DestroyFailed(destroyReason)
-                    }
+                _status.value = if (nativeCreated) {
+                    EngineStatus.Destroying
                 } else {
-                    _status.value = EngineStatus.Failed(reason)
+                    EngineStatus.Failed(e.message ?: "Unknown initialization error")
                 }
-                throw e
             }
         }
+
+        val ex = initException ?: return
+
+        if (nativeCreated) {
+            performDestruction(
+                wasRetrying = false,
+                successStatus = EngineStatus.Failed(ex.message ?: "Unknown initialization error")
+            )
+        }
+        throw ex
     }
 
     private fun observeGeometryProperties() {
@@ -192,7 +191,8 @@ open class MpvEngine(
         MPVLib.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
     }
 
-    private fun detachSurfaceInternal() {
+    private fun detachSurfaceLocked() {
+        isSurfaceAttached = false
         try {
             MPVLib.setPropertyString("vo", "null")
             MPVLib.setPropertyString("force-window", "no")
@@ -288,45 +288,32 @@ open class MpvEngine(
      * Call this once before the view is destroyed.
      */
     fun destroy() {
-        val shouldDetach: Boolean
         synchronized(lock) {
+            val currentStatus = _status.value
+            if (currentStatus is EngineStatus.DestroyFailed) {
+                Log.w(TAG, "Native instance remains owned; use retryDestroy()")
+                return
+            }
+            if (currentStatus is EngineStatus.NotStarted || currentStatus is EngineStatus.Failed) {
+                return
+            }
+            if (currentStatus is EngineStatus.Destroying) {
+                return
+            }
             onVideoGeometryChanged = null
             onPlaybackProgressChanged = null
             pendingSurface = null
             filePath = null
             pendingSurfaceSize = null
-
-            if (_status.value is EngineStatus.DestroyFailed) {
-                Log.w(TAG, "Native instance remains owned; use retryDestroy()")
-                return
+            if (isSurfaceAttached && isReady) {
+                detachSurfaceLocked()
+            } else {
+                isSurfaceAttached = false
             }
-
-            shouldDetach = isSurfaceAttached && isReady
-            if (isSurfaceAttached) isSurfaceAttached = false
+            _status.value = EngineStatus.Destroying
         }
 
-        if (shouldDetach) {
-            detachSurfaceInternal()
-        }
-
-        synchronized(lock) {
-            if (isReady || _status.value is EngineStatus.Starting) {
-                try {
-                    MpvLifecycleGuard.destroy(this)
-                } catch (e: Throwable) {
-                    val reason = e.message ?: "Unknown destruction error"
-                    Log.e(TAG, "Error destroying MPVLib: $reason", e)
-                    MPVLib.removeObserver(this)
-                    MPVLib.removeObserver(eventHandler)
-                    _status.value = EngineStatus.DestroyFailed(reason)
-                    return
-                }
-            }
-            MPVLib.removeObserver(this)
-            MPVLib.removeObserver(eventHandler)
-            eventHandler.reset()
-            _status.value = EngineStatus.NotStarted
-        }
+        performDestruction(wasRetrying = false)
     }
 
     /**
@@ -334,7 +321,7 @@ open class MpvEngine(
      * Only callable once when [status] is [EngineStatus.DestroyFailed] with retried = false.
      */
     fun retryDestroy() {
-        synchronized(lock) {
+        val wasRetrying = synchronized(lock) {
             val currentStatus = _status.value
             if (currentStatus !is EngineStatus.DestroyFailed) {
                 Log.e(TAG, "retryDestroy called when engine status is not DestroyFailed (status is $currentStatus)")
@@ -344,21 +331,51 @@ open class MpvEngine(
                 Log.e(TAG, "retryDestroy already attempted once for this engine; permanent failure")
                 return
             }
+            _status.value = EngineStatus.Destroying
+            true
+        }
 
-            try {
-                // FIX CHECK-A: Route destroy through MpvLifecycleGuard
-                MpvLifecycleGuard.destroy(this)
-                MPVLib.removeObserver(this)
-                MPVLib.removeObserver(eventHandler)
+        performDestruction(wasRetrying = wasRetrying)
+    }
+
+    /**
+     * Shared destruction sequence used by both [destroy] and [retryDestroy].
+     *
+     * 1. Unregisters observers under the state lock.
+     * 2. Releases the engine lock before calling native destruction.
+     * 3. Calls [MpvLifecycleGuard.destroy] outside the engine lock to prevent deadlock
+     *    with the native event thread (which may be in a property callback holding no lock,
+     *    but would block if we held MpvEngine.lock during pthread_join).
+     * 4. Handles the native destruction result.
+     */
+    private fun performDestruction(
+        wasRetrying: Boolean = false,
+        successStatus: EngineStatus = EngineStatus.NotStarted,
+    ): Throwable? {
+        synchronized(lock) {
+            MPVLib.removeObserver(this)
+            MPVLib.removeObserver(eventHandler)
+        }
+
+        val destroyError = try {
+            MpvLifecycleGuard.destroy(this)
+            null
+        } catch (e: Throwable) {
+            val reason = e.message ?: "Unknown destruction error"
+            Log.e(TAG, "Error destroying MPVLib: $reason", e)
+            e
+        }
+
+        synchronized(lock) {
+            if (destroyError == null) {
                 eventHandler.reset()
-                _status.value = EngineStatus.NotStarted
-                Log.i(TAG, "retryDestroy succeeded, status reset to NotStarted")
-            } catch (e: Throwable) {
-                val reason = e.message ?: "Unknown destruction error"
-                Log.e(TAG, "retryDestroy failed: $reason", e)
-                _status.value = EngineStatus.DestroyFailed(reason, retried = true)
+                _status.value = successStatus
+            } else {
+                val reason = destroyError.message ?: "Unknown destruction error"
+                _status.value = EngineStatus.DestroyFailed(reason, retried = wasRetrying)
             }
         }
+        return destroyError
     }
 
     protected open fun initOptions() {}
@@ -373,10 +390,23 @@ open class MpvEngine(
      * it loads immediately; otherwise it is held as pending until ready and attached.
      */
     fun playFile(filePath: String) {
-        clearGeometry()
-        clearProgress()
+        synchronized(lock) {
+            if (_status.value is EngineStatus.Destroying) {
+                Log.w(TAG, "playFile called when engine is Destroying; ignoring")
+                return
+            }
+            currentGeometry = VideoGeometry()
+            currentPositionSec = 0.0
+            currentDurationSec = 0.0
+        }
+        onVideoGeometryChanged?.invoke(VideoGeometry())
+        onPlaybackProgressChanged?.invoke(0.0, 0.0)
         eventHandler.reset()
         synchronized(lock) {
+            if (_status.value is EngineStatus.Destroying) {
+                Log.w(TAG, "playFile called when engine is Destroying; ignoring")
+                return
+            }
             if (isReady && isSurfaceAttached) {
                 this.filePath = null
                 MPVLib.setPropertyString("vo", voInUse)
@@ -532,15 +562,14 @@ open class MpvEngine(
 
     fun onSurfaceDestroyed() {
         Log.w(TAG, "detaching surface")
-        val shouldDetach: Boolean
         synchronized(lock) {
             pendingSurface = null
             if (!isSurfaceAttached) return
-            isSurfaceAttached = false
-            shouldDetach = isReady
-        }
-        if (shouldDetach) {
-            detachSurfaceInternal()
+            if (isReady) {
+                detachSurfaceLocked()
+            } else {
+                isSurfaceAttached = false
+            }
         }
     }
 

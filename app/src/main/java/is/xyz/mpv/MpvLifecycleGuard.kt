@@ -9,6 +9,7 @@ object MpvLifecycleGuard {
     // acquire MpvEngine.lock first, then this guard's intrinsic lock — maintain
     // this order in all future call sites to avoid deadlock.
     private var owner: MpvEngine? = null
+    internal var destroyCallCount: Int = 0
 
     @Synchronized
     fun create(engine: MpvEngine, context: Context) {
@@ -26,6 +27,7 @@ object MpvLifecycleGuard {
 
     @Synchronized
     fun destroy(engine: MpvEngine) {
+        destroyCallCount++
         if (owner !== engine) {
             throw IllegalStateException("Caller is not the owner of MPVLib")
         }
@@ -39,5 +41,6 @@ object MpvLifecycleGuard {
     @Synchronized
     internal fun resetForTesting() {
         owner = null
+        destroyCallCount = 0
     }
 }
