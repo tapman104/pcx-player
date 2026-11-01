@@ -18,4 +18,16 @@ object TimeFormatter {
             String.format(Locale.US, "%02d:%02d", m, s)
         }
     }
+
+    /**
+     * Formats delta seconds into signed MM:SS format (e.g. -00:10, +00:06).
+     */
+    fun formatDelta(deltaSec: Double): String {
+        if (deltaSec.isNaN()) return "+00:00"
+        val sign = if (deltaSec < 0) "-" else "+"
+        val totalSeconds = kotlin.math.abs(deltaSec).toLong()
+        val s = totalSeconds % 60
+        val m = totalSeconds / 60
+        return String.format(Locale.US, "%s%02d:%02d", sign, m, s)
+    }
 }

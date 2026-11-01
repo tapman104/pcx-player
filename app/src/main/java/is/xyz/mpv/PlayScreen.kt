@@ -152,9 +152,22 @@ fun PlayScreen(
                             if (controlsVisible) resetHideTimer()
                         }
                     },
-                    onSeekBy = {
-                        viewModel.seekBy(it)
-                        indicator = GestureIndicator.Seek(it)
+                    onSeekBy = { delta ->
+                        // Anchor to the last displayed target, not live playbackProgress, because
+                        // PlayerGestureHandler fires onSeekBy repeatedly with per-event deltas during
+                        // a continuous drag, and MPV's position updates arrive asynchronously — reading
+                        // playbackProgress on every delta could show a stale or jumpy target value.
+                        // Only fall back to live position at the start of a new gesture (no prior
+                        // Seek indicator currently displayed).
+                        val previousTarget =
+                            (indicator as? GestureIndicator.Seek)?.targetPositionSec
+                                ?: viewModel.playbackProgress.value.positionSec
+
+                        val target = (previousTarget + delta)
+                            .coerceIn(0.0, viewModel.playbackProgress.value.durationSec)
+
+                        indicator = GestureIndicator.Seek(delta, target)
+                        viewModel.seekBy(delta)
                     },
                     onSpeedChange = {
                         viewModel.setSpeed(it.toDouble())
