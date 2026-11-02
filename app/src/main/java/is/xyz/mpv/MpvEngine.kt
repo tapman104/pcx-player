@@ -196,20 +196,6 @@ open class MpvEngine(
         try {
             MPVLib.setPropertyString("vo", "null")
             MPVLib.setPropertyString("force-window", "no")
-
-            // Wait for VO to deinitialize on the mpv core thread before releasing the native window.
-            // In libmpv, getProperty queries synchronously block on the core thread.
-            // vo-configured returns false once VO teardown completes.
-            var attempts = 0
-            while (attempts < 20 && MPVLib.getPropertyBoolean("vo-configured") == true) {
-                try {
-                    Thread.sleep(5)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    break
-                }
-                attempts++
-            }
             MPVLib.detachSurface()
         } catch (e: Exception) {
             Log.e(TAG, "Error detaching surface", e)
@@ -229,7 +215,6 @@ open class MpvEngine(
      *
      * Returns true if the property was consumed (was a geometry property).
      */
-    // FIX #2: synchronized geometry mutation with callback outside lock
     fun onPropertyLong(property: String, value: Long): Boolean {
         val updated = synchronized(lock) {
             val next = when (property) {
@@ -250,7 +235,6 @@ open class MpvEngine(
      *
      * Returns true if the property was consumed.
      */
-    // FIX #2: synchronized progress mutation with callback outside lock
     fun onPropertyDouble(property: String, value: Double): Boolean {
         val (pos, dur) = synchronized(lock) {
             when (property) {
@@ -404,7 +388,6 @@ open class MpvEngine(
         eventHandler.reset()
         synchronized(lock) {
             if (_status.value is EngineStatus.Destroying) {
-                Log.w(TAG, "playFile called when engine is Destroying; ignoring")
                 return
             }
             if (isReady && isSurfaceAttached) {
@@ -412,7 +395,6 @@ open class MpvEngine(
                 MPVLib.setPropertyString("vo", voInUse)
                 loadFileLocked(filePath)
             } else {
-                // FIX #7: Warn when overwriting a non-null pending filePath before it was loaded
                 if (this.filePath != null) {
                     Log.w(TAG, "Pending file '${this.filePath}' discarded before load; overwriting with '$filePath'")
                 }
@@ -421,25 +403,32 @@ open class MpvEngine(
         }
     }
 
+    private inline fun whenReady(action: () -> Unit) {
+        synchronized(lock) {
+            if (isReady) action()
+        }
+    }
+
+    private inline fun <T> withReady(action: () -> T): T? {
+        synchronized(lock) {
+            if (!isReady) return null
+            return action()
+        }
+    }
+
     /**
      * Toggle play/pause state. Guarded by [isReady].
      */
-    fun togglePause() {
-        synchronized(lock) {
-            if (!isReady) return
-            val paused = MPVLib.getPropertyBoolean("pause") ?: return
-            MPVLib.setPropertyBoolean("pause", !paused)
-        }
+    fun togglePause() = whenReady {
+        val paused = MPVLib.getPropertyBoolean("pause") ?: return@whenReady
+        MPVLib.setPropertyBoolean("pause", !paused)
     }
 
     /**
      * Seek to an absolute position in seconds. Guarded by [isReady].
      */
-    fun seekTo(positionSec: Double) {
-        synchronized(lock) {
-            if (!isReady) return
-            MPVLib.command(arrayOf("seek", positionSec.toString(), "absolute"))
-        }
+    fun seekTo(positionSec: Double) = whenReady {
+        MPVLib.command(arrayOf("seek", positionSec.toString(), "absolute"))
     }
 
     /**
@@ -447,21 +436,15 @@ open class MpvEngine(
      * mpv resolves the offset against its own current position — no round
      * trip through a cached position value. Guarded by [isReady].
      */
-    fun seekBy(offsetSec: Double) {
-        synchronized(lock) {
-            if (!isReady) return
-            MPVLib.command(arrayOf("seek", offsetSec.toString(), "relative"))
-        }
+    fun seekBy(offsetSec: Double) = whenReady {
+        MPVLib.command(arrayOf("seek", offsetSec.toString(), "relative"))
     }
 
     /**
      * Set playback speed as a multiplier (1.0 = normal). Guarded by [isReady].
      */
-    fun setSpeed(speed: Double) {
-        synchronized(lock) {
-            if (!isReady) return
-            MPVLib.setPropertyDouble("speed", speed)
-        }
+    fun setSpeed(speed: Double) = whenReady {
+        MPVLib.setPropertyDouble("speed", speed)
     }
 
     /**
@@ -470,59 +453,41 @@ open class MpvEngine(
      * logarithmic video-zoom property and writes the accumulated value back.
      * Guarded by [isReady].
      */
-    fun zoomBy(factor: Float) {
-        synchronized(lock) {
-            if (!isReady) return
-            if (!factor.isFinite() || factor <= 0f) return
-            val currentZoom = MPVLib.getPropertyDouble("video-zoom") ?: 0.0
-            val delta = kotlin.math.ln(factor.toDouble()) / kotlin.math.ln(2.0)
-            val next = currentZoom + delta
-            MPVLib.setPropertyDouble("video-zoom", next)
-        }
+    fun zoomBy(factor: Float) = whenReady {
+        if (!factor.isFinite() || factor <= 0f) return@whenReady
+        val currentZoom = MPVLib.getPropertyDouble("video-zoom") ?: 0.0
+        val delta = kotlin.math.ln(factor.toDouble()) / kotlin.math.ln(2.0)
+        val next = currentZoom + delta
+        MPVLib.setPropertyDouble("video-zoom", next)
     }
 
     /**
      * Fetch the current track list node from mpv. Guarded by [isReady].
      */
-    fun getTrackList(): MPVNode? {
-        synchronized(lock) {
-            if (!isReady) return null
-            return MPVLib.getPropertyNode("track-list")
-        }
+    fun getTrackList(): MPVNode? = withReady {
+        MPVLib.getPropertyNode("track-list")
     }
 
     /**
      * Select audio track by ID. Guarded by [isReady].
      */
-    fun selectAudioTrack(trackId: Int) {
-        synchronized(lock) {
-            if (!isReady) return
-            MPVLib.setPropertyString("aid", if (trackId <= 0) "no" else trackId.toString())
-        }
+    fun selectAudioTrack(trackId: Int) = whenReady {
+        MPVLib.setPropertyString("aid", if (trackId <= 0) "no" else trackId.toString())
     }
 
     /**
      * Select subtitle track by ID, or null to turn subtitles off. Guarded by [isReady].
      */
-    fun selectSubtitleTrack(trackId: Int?) {
-        synchronized(lock) {
-            if (!isReady) return
-            MPVLib.setPropertyString("sid", if (trackId == null || trackId <= 0) "no" else trackId.toString())
-        }
+    fun selectSubtitleTrack(trackId: Int?) = whenReady {
+        MPVLib.setPropertyString("sid", if (trackId == null || trackId <= 0) "no" else trackId.toString())
     }
 
-    fun setSubFontSize(size: Int) {
-        synchronized(lock) {
-            if (!isReady) return
-            MPVLib.setPropertyString("sub-font-size", size.toString())
-        }
+    fun setSubFontSize(size: Int) = whenReady {
+        MPVLib.setPropertyString("sub-font-size", size.toString())
     }
 
-    fun setSubPos(pos: Int) {
-        synchronized(lock) {
-            if (!isReady) return
-            MPVLib.setPropertyString("sub-pos", pos.toString())
-        }
+    fun setSubPos(pos: Int) = whenReady {
+        MPVLib.setPropertyString("sub-pos", pos.toString())
     }
 
     /**
