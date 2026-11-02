@@ -559,6 +559,35 @@ class MpvEngineTest {
     }
 
     @Test
+    fun testDetachSurfaceFailureTransitionsToDetachFailedAndDoesNotClaimDetached() {
+        val eventHandler = EngineEventHandler()
+        val context = createTestContext()
+        val engine = MpvEngine(context, eventHandler)
+        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
+
+        val surface = android.view.Surface(android.graphics.SurfaceTexture(0))
+        engine.onSurfaceCreated(surface)
+        assertEquals(SurfaceAttachmentState.Attached, engine.surfaceAttachment)
+        assertTrue(engine.isSurfaceAttached)
+
+        MPVLib.simulateDetachSurfaceFailure = true
+        engine.onSurfaceDestroyed()
+
+        // Must NOT silently treat as Detached, and must NOT treat as Attached
+        assertFalse("Engine must not report attached when detach threw", engine.isSurfaceAttached)
+        assertTrue("Engine must hold DetachFailed state", engine.surfaceAttachment is SurfaceAttachmentState.DetachFailed)
+        val failure = engine.surfaceAttachment as SurfaceAttachmentState.DetachFailed
+        assertEquals("Simulated MPVLib.detachSurface failure", failure.exception.message)
+
+        // Subsequent onSurfaceCreated recovers cleanly
+        MPVLib.simulateDetachSurfaceFailure = false
+        val newSurface = android.view.Surface(android.graphics.SurfaceTexture(1))
+        engine.onSurfaceCreated(newSurface)
+        assertEquals(SurfaceAttachmentState.Attached, engine.surfaceAttachment)
+        assertTrue(engine.isSurfaceAttached)
+    }
+
+    @Test
     fun testRepeatedInitializeAndDestroy() {
         // Verify no observer duplication or state corruption across multiple cycles.
         val eventHandler = EngineEventHandler()

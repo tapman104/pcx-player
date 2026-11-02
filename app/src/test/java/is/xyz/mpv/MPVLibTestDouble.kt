@@ -13,6 +13,7 @@ object MPVLib {
     var simulateInitFailure: Boolean = false
     var simulatePostCreateFailure: Boolean = false
     var simulateDestroyFailure: Boolean = false
+    var simulateDetachSurfaceFailure: Boolean = false
     var destroyCallCount: Int = 0
     var createCallCount: Int = 0
     var isCreated: Boolean = false
@@ -51,7 +52,11 @@ object MPVLib {
             attachedSurfaces.add(surface)
         }
     }
-    fun detachSurface() {}
+    fun detachSurface() {
+        if (simulateDetachSurfaceFailure) {
+            throw RuntimeException("Simulated MPVLib.detachSurface failure")
+        }
+    }
 
     fun command(cmd: Array<out String>) {
         if (cmd.isNotEmpty() && cmd[0] == "loadfile" && cmd.size > 1) {
@@ -109,6 +114,7 @@ object MPVLib {
         simulateInitFailure = false
         simulatePostCreateFailure = false
         simulateDestroyFailure = false
+        simulateDetachSurfaceFailure = false
         destroyCallCount = 0
         createCallCount = 0
         isCreated = false

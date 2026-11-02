@@ -29,6 +29,15 @@ sealed interface EngineStatus {
     data class DestroyFailed(val reason: String, val retried: Boolean = false) : EngineStatus
 }
 
+/**
+ * Explicit state of surface attachment to libmpv.
+ */
+sealed interface SurfaceAttachmentState {
+    data object Detached : SurfaceAttachmentState
+    data object Attached : SurfaceAttachmentState
+    data class DetachFailed(val exception: Throwable) : SurfaceAttachmentState
+}
+
 open class MpvEngine(
     private val appContext: Context,
     private val eventHandler: EngineEventHandler,
@@ -50,7 +59,13 @@ open class MpvEngine(
     private var currentPositionSec: Double = 0.0
     private var currentDurationSec: Double = 0.0
 
-    private var isSurfaceAttached: Boolean = false
+    private var surfaceAttachmentState: SurfaceAttachmentState = SurfaceAttachmentState.Detached
+
+    val surfaceAttachment: SurfaceAttachmentState
+        get() = synchronized(lock) { surfaceAttachmentState }
+
+    val isSurfaceAttached: Boolean
+        get() = synchronized(lock) { surfaceAttachmentState is SurfaceAttachmentState.Attached }
     private var pendingSurface: Surface? = null
     private var pendingSurfaceSize: Pair<Int, Int>? = null
     private var filePath: String? = null
@@ -161,7 +176,7 @@ open class MpvEngine(
         if (surfaceToAttach != null) {
             pendingSurface = null
             attachSurfaceLocked(surfaceToAttach)
-        } else if (isSurfaceAttached && filePath != null) {
+        } else if (surfaceAttachmentState is SurfaceAttachmentState.Attached && filePath != null) {
             val path = filePath as String
             filePath = null
             loadFileLocked(path)
@@ -170,7 +185,7 @@ open class MpvEngine(
 
     private fun attachSurfaceLocked(surface: Surface) {
         Log.w(TAG, "attaching surface")
-        isSurfaceAttached = true
+        surfaceAttachmentState = SurfaceAttachmentState.Attached
         MPVLib.attachSurface(surface)
         // This forces mpv to render subs/osd/whatever into our surface even if it would ordinarily not
         MPVLib.setOptionString("force-window", "yes")
@@ -192,13 +207,14 @@ open class MpvEngine(
     }
 
     private fun detachSurfaceLocked() {
-        isSurfaceAttached = false
         try {
             MPVLib.setPropertyString("vo", "null")
             MPVLib.setPropertyString("force-window", "no")
             MPVLib.detachSurface()
+            surfaceAttachmentState = SurfaceAttachmentState.Detached
         } catch (e: Exception) {
-            Log.e(TAG, "Error detaching surface", e)
+            surfaceAttachmentState = SurfaceAttachmentState.DetachFailed(e)
+            Log.e(TAG, "Error detaching surface: native detach failed; state set to DetachFailed", e)
         }
     }
 
@@ -289,10 +305,10 @@ open class MpvEngine(
             pendingSurface = null
             filePath = null
             pendingSurfaceSize = null
-            if (isSurfaceAttached && isReady) {
+            if (surfaceAttachmentState is SurfaceAttachmentState.Attached && isReady) {
                 detachSurfaceLocked()
-            } else {
-                isSurfaceAttached = false
+            } else if (surfaceAttachmentState !is SurfaceAttachmentState.DetachFailed) {
+                surfaceAttachmentState = SurfaceAttachmentState.Detached
             }
             _status.value = EngineStatus.Destroying
         }
@@ -390,7 +406,7 @@ open class MpvEngine(
             if (_status.value is EngineStatus.Destroying) {
                 return
             }
-            if (isReady && isSurfaceAttached) {
+            if (isReady && surfaceAttachmentState is SurfaceAttachmentState.Attached) {
                 this.filePath = null
                 MPVLib.setPropertyString("vo", voInUse)
                 loadFileLocked(filePath)
@@ -529,11 +545,11 @@ open class MpvEngine(
         Log.w(TAG, "detaching surface")
         synchronized(lock) {
             pendingSurface = null
-            if (!isSurfaceAttached) return
+            if (surfaceAttachmentState !is SurfaceAttachmentState.Attached) return
             if (isReady) {
                 detachSurfaceLocked()
             } else {
-                isSurfaceAttached = false
+                surfaceAttachmentState = SurfaceAttachmentState.Detached
             }
         }
     }
