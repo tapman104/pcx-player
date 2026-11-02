@@ -320,3 +320,17 @@ fix(lifecycle): fix initialization-failure finalization race in MpvEngine
 - Transition directly to Failed in initialize() failure path without intermediate NotStarted window
 - Remove redundant synchronized block in initialize() following performDestruction()
 - Move MPVLibTestDouble.onDestroy hook post-native destruction and add unit test verifying race prevention
+
+
+02.11.2026
+refactor(engine): remove VO-teardown poll and simplify player commands
+
+
+    fix(engine): track surface detachment failure and prevent false detached state
+    
+    - Introduce SurfaceAttachmentState to distinctly represent Attached, Detached, and DetachFailed states
+    - Defer setting state to Detached until MPVLib.detachSurface() returns successfully
+    - Capture and log native detach exceptions under DetachFailed state without falsely claiming detachment
+    - Add simulation and regression tests verifying detachment failure handling in MpvEngineTest
+
+    fix(mpv): keep playback engine alive after EOF

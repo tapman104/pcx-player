@@ -109,7 +109,8 @@ open class MpvEngine(
 
                 postInitOptions()
                 MPVLib.setOptionString("force-window", "no")
-                MPVLib.setOptionString("idle", "once")
+                MPVLib.setOptionString("idle", "yes")
+                MPVLib.setOptionString("keep-open", "yes")
 
                 observeProperties()
                 observeGeometryProperties()
