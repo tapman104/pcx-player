@@ -47,20 +47,11 @@ fun GestureIndicatorOverlay(
         if (indicator == null) return@AnimatedVisibility
 
         if (indicator is GestureIndicator.Seek) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = TimeFormatter.formatDelta(indicator.deltaSec),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "[${TimeFormatter.formatTime(indicator.targetPositionSec)}]",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Text(
+                text = TimeFormatter.formatDelta(indicator.deltaSec),
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
             return@AnimatedVisibility
         }
 

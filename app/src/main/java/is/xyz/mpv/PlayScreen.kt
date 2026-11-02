@@ -153,20 +153,25 @@ fun PlayScreen(
                         }
                     },
                     onSeekBy = { delta ->
-                        // Anchor to the last displayed target, not live playbackProgress, because
-                        // PlayerGestureHandler fires onSeekBy repeatedly with per-event deltas during
-                        // a continuous drag, and MPV's position updates arrive asynchronously — reading
-                        // playbackProgress on every delta could show a stale or jumpy target value.
-                        // Only fall back to live position at the start of a new gesture (no prior
-                        // Seek indicator currently displayed).
-                        val previousTarget =
-                            (indicator as? GestureIndicator.Seek)?.targetPositionSec
-                                ?: viewModel.playbackProgress.value.positionSec
+                        val previousSeek = indicator as? GestureIndicator.Seek
+                        val currentPosition = viewModel.playbackProgress.value.positionSec
+                        val duration = viewModel.playbackProgress.value.durationSec
+
+                        val startPosition = previousSeek?.let {
+                            it.targetPositionSec - it.deltaSec
+                        } ?: currentPosition
+
+                        val previousTarget = previousSeek?.targetPositionSec
+                            ?: currentPosition
 
                         val target = (previousTarget + delta)
-                            .coerceIn(0.0, viewModel.playbackProgress.value.durationSec)
+                            .coerceIn(0.0, duration)
 
-                        indicator = GestureIndicator.Seek(delta, target)
+                        indicator = GestureIndicator.Seek(
+                            deltaSec = target - startPosition,
+                            targetPositionSec = target
+                        )
+
                         viewModel.seekBy(delta)
                     },
                     onSpeedChange = {
