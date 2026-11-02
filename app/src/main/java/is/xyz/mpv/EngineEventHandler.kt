@@ -181,6 +181,10 @@ class EngineEventHandler : MPVLib.EventObserver {
         _playbackProgress.value = PlaybackProgress()
     }
 
+    fun syncPauseState(isPaused: Boolean) {
+        _trackState.update { it.copy(isPaused = isPaused) }
+    }
+
     fun handleTrackListNode(node: MPVNode) {
         val rawTracks = parseTrackList(node)
         val audio = rawTracks.filter { it.type == TrackType.Audio }

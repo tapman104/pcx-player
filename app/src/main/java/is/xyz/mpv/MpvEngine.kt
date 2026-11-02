@@ -184,6 +184,7 @@ open class MpvEngine(
 
     private fun loadFile(path: String) {
         MPVLib.command(arrayOf("loadfile", path))
+        MPVLib.getPropertyBoolean("pause")?.let { eventHandler.syncPauseState(it) }
     }
 
     private fun detachSurface() {
