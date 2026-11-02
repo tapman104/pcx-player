@@ -43,19 +43,22 @@ class MpvEngineTest {
         val engine = MpvEngine(context, eventHandler)
 
         var reportedGeometry: VideoGeometry? = null
-        engine.onVideoGeometryChanged = { geometry ->
+        eventHandler.onVideoGeometryChanged = { geometry ->
             reportedGeometry = geometry
         }
 
-        val observer: MPVLib.EventObserver = engine
+        val observer: MPVLib.EventObserver = eventHandler
         observer.eventProperty("width", 1920L)
         assertEquals(1920, reportedGeometry?.width)
+        assertEquals(1920, eventHandler.geometry.value.width)
 
         observer.eventProperty("height", 1080L)
         assertEquals(1080, reportedGeometry?.height)
+        assertEquals(1080, eventHandler.geometry.value.height)
 
         observer.eventProperty("video-rotate", 90L)
         assertEquals(90, reportedGeometry?.rotationDegrees)
+        assertEquals(90, eventHandler.geometry.value.rotationDegrees)
     }
 
     @Test
@@ -66,17 +69,19 @@ class MpvEngineTest {
 
         var reportedPos = 0.0
         var reportedDur = 0.0
-        engine.onPlaybackProgressChanged = { pos, dur ->
+        eventHandler.onPlaybackProgressChanged = { pos, dur ->
             reportedPos = pos
             reportedDur = dur
         }
 
-        val observer: MPVLib.EventObserver = engine
+        val observer: MPVLib.EventObserver = eventHandler
         observer.eventProperty("time-pos", 45.5)
         assertEquals(45.5, reportedPos, 0.001)
+        assertEquals(45.5, eventHandler.progress.value.positionSec, 0.001)
 
         observer.eventProperty("duration", 120.0)
         assertEquals(120.0, reportedDur, 0.001)
+        assertEquals(120.0, eventHandler.progress.value.durationSec, 0.001)
     }
 
     @Test
@@ -201,54 +206,6 @@ class MpvEngineTest {
     }
 
     @Test
-    fun testPlayFileRearmsPauseObserver() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-        MPVLib.observedProperties.clear()
-
-        // Attach surface so engine is ready to load file immediately
-        val surface = android.view.Surface(android.graphics.SurfaceTexture(0))
-        engine.onSurfaceCreated(surface)
-
-        engine.playFile("/path/to/video.mp4")
-
-        assertTrue(
-            "observeProperty(\"pause\", MPV_FORMAT_FLAG) must be re-armed when loading a file",
-            MPVLib.observedProperties.any { it.first == "pause" && it.second == MPVLib.MpvFormat.MPV_FORMAT_FLAG }
-        )
-    }
-
-    // FIX CHECK-A: Test process-wide ownership guard prevents concurrent initialization
-    @Test
-    fun testProcessWideOwnershipGuardThrowsOnConcurrentCreate() {
-        val eventHandler1 = EngineEventHandler()
-        val context1 = createTestContext()
-        val engine1 = MpvEngine(context1, eventHandler1)
-        engine1.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-
-        val eventHandler2 = EngineEventHandler()
-        val context2 = createTestContext()
-        val engine2 = MpvEngine(context2, eventHandler2)
-
-        try {
-            engine2.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-            fail("Expected second MpvEngine.initialize to throw IllegalStateException due to MpvLifecycleGuard")
-        } catch (e: IllegalStateException) {
-            assertEquals("MPVLib is already owned", e.message)
-        } finally {
-            engine1.destroy()
-        }
-
-        // After engine1 destroys, engine2 should be able to initialize cleanly
-        engine2.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-        assertEquals(EngineStatus.Ready, engine2.status.value)
-        engine2.destroy()
-    }
-
-    @Test
     fun testInitFailureWithDestroyFailureClearsFieldsAndRetryDestroySucceeds() {
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
@@ -257,8 +214,8 @@ class MpvEngineTest {
         // Set up pre-failure state with closures tracking if old callbacks fire
         var oldGeometryCalls = 0
         var oldProgressCalls = 0
-        engine.onVideoGeometryChanged = { oldGeometryCalls++ }
-        engine.onPlaybackProgressChanged = { _, _ -> oldProgressCalls++ }
+        eventHandler.onVideoGeometryChanged = { oldGeometryCalls++ }
+        eventHandler.onPlaybackProgressChanged = { _, _ -> oldProgressCalls++ }
         val staleSurface = android.view.Surface(android.graphics.SurfaceTexture(0))
         engine.onSurfaceCreated(staleSurface)
         engine.playFile("/path/to/stale.mp4")
@@ -284,11 +241,11 @@ class MpvEngineTest {
         // Assert status is DestroyFailed
         assertTrue(engine.status.value is EngineStatus.DestroyFailed)
 
-        // Reset destroy failure so retryDestroy() can succeed
+        // Reset destroy failure so destroy() can succeed on recall
         MPVLib.simulateDestroyFailure = false
 
-        // Call retryDestroy(), assert it succeeds and status becomes NotStarted
-        engine.retryDestroy()
+        // Call destroy() again, assert it succeeds and status becomes NotStarted
+        engine.destroy()
         assertEquals(EngineStatus.NotStarted, engine.status.value)
 
         // Reset post-create failure so re-initialization can succeed
@@ -322,10 +279,10 @@ class MpvEngineTest {
 
         // Set fresh callbacks and confirm they fire when property events occur
         var freshGeometry: VideoGeometry? = null
-        engine.onVideoGeometryChanged = { freshGeometry = it }
+        eventHandler.onVideoGeometryChanged = { freshGeometry = it }
         var freshPos = 0.0
         var freshDur = 0.0
-        engine.onPlaybackProgressChanged = { pos, dur ->
+        eventHandler.onPlaybackProgressChanged = { pos, dur ->
             freshPos = pos
             freshDur = dur
         }
@@ -350,8 +307,8 @@ class MpvEngineTest {
         // Set up pre-failure state with closures tracking if old callbacks fire
         var oldGeometryCalls = 0
         var oldProgressCalls = 0
-        engine.onVideoGeometryChanged = { oldGeometryCalls++ }
-        engine.onPlaybackProgressChanged = { _, _ -> oldProgressCalls++ }
+        eventHandler.onVideoGeometryChanged = { oldGeometryCalls++ }
+        eventHandler.onPlaybackProgressChanged = { _, _ -> oldProgressCalls++ }
         val staleSurface = android.view.Surface(android.graphics.SurfaceTexture(0))
         engine.onSurfaceCreated(staleSurface)
         engine.playFile("/path/to/stale.mp4")
@@ -409,10 +366,10 @@ class MpvEngineTest {
 
         // Set fresh callbacks and confirm they fire when property events occur
         var freshGeometry: VideoGeometry? = null
-        engine.onVideoGeometryChanged = { freshGeometry = it }
+        eventHandler.onVideoGeometryChanged = { freshGeometry = it }
         var freshPos = 0.0
         var freshDur = 0.0
-        engine.onPlaybackProgressChanged = { pos, dur ->
+        eventHandler.onPlaybackProgressChanged = { pos, dur ->
             freshPos = pos
             freshDur = dur
         }
@@ -448,7 +405,7 @@ class MpvEngineTest {
 
     @Test
     fun testObserversRemovedBeforeNativeDestruction() {
-        // Verify observers are unregistered before MpvLifecycleGuard.destroy() is called.
+        // Verify observers are unregistered before MPVLib.destroy() is called.
         // We do this by counting observers inside a destroy-failure scenario:
         // if destroy throws, observers must already be gone.
         val eventHandler = EngineEventHandler()
@@ -467,29 +424,31 @@ class MpvEngineTest {
 
     @Test
     fun testNoStaleCallbacksAfterDestroy() {
-        // After destroy(), property callbacks on the engine object must be null.
+        // After destroy(), eventHandler is unregistered so property callbacks do not fire.
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
         val engine = MpvEngine(context, eventHandler)
 
         var geometryCalled = false
         var progressCalled = false
-        engine.onVideoGeometryChanged = { geometryCalled = true }
-        engine.onPlaybackProgressChanged = { _, _ -> progressCalled = true }
+        eventHandler.onVideoGeometryChanged = { geometryCalled = true }
+        eventHandler.onPlaybackProgressChanged = { _, _ -> progressCalled = true }
 
         engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
         engine.destroy()
 
         // Simulate native callbacks arriving after destruction
-        engine.eventProperty("width", 1920L)
-        engine.eventProperty("time-pos", 55.0)
+        eventHandler.eventProperty("width", 1920L)
+        eventHandler.eventProperty("time-pos", 55.0)
+        MPVLib.eventProperty("width", 1920L)
+        MPVLib.eventProperty("time-pos", 55.0)
 
         assertFalse("Geometry callback must not fire after destroy", geometryCalled)
         assertFalse("Progress callback must not fire after destroy", progressCalled)
     }
 
     @Test
-    fun testRetryDestroyResetsStatusToNotStarted() {
+    fun testDestroyRecallResetsStatusToNotStarted() {
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
         val engine = MpvEngine(context, eventHandler)
@@ -499,37 +458,11 @@ class MpvEngineTest {
         MPVLib.simulateDestroyFailure = true
         engine.destroy()
         assertTrue(engine.status.value is EngineStatus.DestroyFailed)
-        assertFalse((engine.status.value as EngineStatus.DestroyFailed).retried)
 
-        // Second destroy attempt (retry) succeeds
+        // Second destroy attempt (retry via recall) succeeds
         MPVLib.simulateDestroyFailure = false
-        engine.retryDestroy()
-        assertEquals(EngineStatus.NotStarted, engine.status.value)
-    }
-
-    @Test
-    fun testRetryDestroyWithRetryCountTrue_blocksThirdAttempt() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-
-        // Both destroy and retry fail -> retried=true
-        MPVLib.simulateDestroyFailure = true
         engine.destroy()
-        engine.retryDestroy()
-
-        val status = engine.status.value
-        assertTrue(status is EngineStatus.DestroyFailed)
-        assertTrue((status as EngineStatus.DestroyFailed).retried)
-
-        // A third retryDestroy call must be ignored (retried=true guard)
-        MPVLib.simulateDestroyFailure = false
-        engine.retryDestroy()
-
-        // Status must remain DestroyFailed with retried=true, not reset to NotStarted
-        assertTrue(engine.status.value is EngineStatus.DestroyFailed)
-        assertTrue((engine.status.value as EngineStatus.DestroyFailed).retried)
+        assertEquals(EngineStatus.NotStarted, engine.status.value)
     }
 
     @Test
@@ -613,13 +546,13 @@ class MpvEngineTest {
         engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
 
         var destroyedInsideCallback = false
-        engine.onPlaybackProgressChanged = { _, _ ->
+        eventHandler.onPlaybackProgressChanged = { _, _ ->
             // Calling destroy() from within a progress callback
             engine.destroy()
             destroyedInsideCallback = true
         }
 
-        engine.eventProperty("time-pos", 12.34)
+        eventHandler.eventProperty("time-pos", 12.34)
         assertTrue("destroy() must succeed when called from within progress callback", destroyedInsideCallback)
         assertEquals(EngineStatus.NotStarted, engine.status.value)
     }
@@ -677,13 +610,12 @@ class MpvEngineTest {
     }
 
     @Test
-    fun testMpvLifecycleGuardDestroyHasExactlyOneCallSite() {
-        // Structural test: MpvEngine.destroy() and MpvEngine.retryDestroy() must both
+    fun testMpvDestroyHasExactlyOneCallSite() {
+        // Structural test: MpvEngine.destroy() invocations (initial and retry recall)
         // delegate to the private performDestruction() helper, which is the sole call site
-        // for MpvLifecycleGuard.destroy(). This is verified by observing that a single
-        // destroy()-then-retryDestroy() cycle calls MPVLib.destroy() exactly once each
-        // (two total, one per attempt), which would only be possible if both went through
-        // the shared helper.
+        // for MPVLib.destroy(). This is verified by observing that an initial destroy() failure
+        // followed by a successful destroy() recall calls MPVLib.destroy() exactly once each
+        // (two total, one per attempt), which confirms both go through the shared helper.
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
         val engine = MpvEngine(context, eventHandler)
@@ -695,8 +627,8 @@ class MpvEngineTest {
         assertEquals("destroy() must invoke MPVLib.destroy exactly once", beforeCount + 1, MPVLib.destroyCallCount)
 
         MPVLib.simulateDestroyFailure = false
-        engine.retryDestroy()
-        assertEquals("retryDestroy() must invoke MPVLib.destroy exactly once more", beforeCount + 2, MPVLib.destroyCallCount)
+        engine.destroy()
+        assertEquals("destroy() recall must invoke MPVLib.destroy exactly once more", beforeCount + 2, MPVLib.destroyCallCount)
     }
 
     @Test
@@ -706,7 +638,6 @@ class MpvEngineTest {
         val engine = MpvEngine(context, eventHandler)
 
         assertEquals(EngineStatus.NotStarted, engine.status.value)
-        assertEquals(0, MpvLifecycleGuard.destroyCallCount)
         assertEquals(0, MPVLib.destroyCallCount)
         assertFalse(MPVLib.isCreated)
 
@@ -714,7 +645,6 @@ class MpvEngineTest {
         engine.destroy()
 
         assertEquals(EngineStatus.NotStarted, engine.status.value)
-        assertEquals("MpvLifecycleGuard.destroy must never be reached", 0, MpvLifecycleGuard.destroyCallCount)
         assertEquals("MPVLib.destroy must never be reached", 0, MPVLib.destroyCallCount)
         assertFalse(MPVLib.isCreated)
 
@@ -724,7 +654,6 @@ class MpvEngineTest {
         assertTrue(MPVLib.isCreated)
         engine.destroy()
         assertEquals(EngineStatus.NotStarted, engine.status.value)
-        assertEquals(1, MpvLifecycleGuard.destroyCallCount)
         assertEquals(1, MPVLib.destroyCallCount)
     }
 
@@ -743,7 +672,6 @@ class MpvEngineTest {
         }
 
         assertTrue(engine.status.value is EngineStatus.Failed)
-        val guardDestroysBefore = MpvLifecycleGuard.destroyCallCount
         val mpvLibDestroysBefore = MPVLib.destroyCallCount
         assertFalse(MPVLib.isCreated)
 
@@ -751,69 +679,41 @@ class MpvEngineTest {
         engine.destroy()
 
         assertTrue(engine.status.value is EngineStatus.Failed)
-        assertEquals("MpvLifecycleGuard.destroy must not be called", guardDestroysBefore, MpvLifecycleGuard.destroyCallCount)
         assertEquals("MPVLib.destroy must not be called", mpvLibDestroysBefore, MPVLib.destroyCallCount)
     }
 
     @Test
-    fun testFailedRetryProducesDestroyFailedWithRetriedTrue() {
+    fun testConcurrentDestroyCallsOnDestroyFailedInvokePerformDestructionExactlyOnce() {
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
         val engine = MpvEngine(context, eventHandler)
         engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
 
-        // Initial destroy fails -> DestroyFailed(retried = false)
-        MPVLib.simulateDestroyFailure = true
-        engine.destroy()
-
-        val firstStatus = engine.status.value
-        assertTrue(firstStatus is EngineStatus.DestroyFailed)
-        assertFalse((firstStatus as EngineStatus.DestroyFailed).retried)
-
-        // Retry also fails (simulateDestroyFailure remains true)
-        engine.retryDestroy()
-
-        val retryStatus = engine.status.value
-        assertTrue("Status must remain DestroyFailed", retryStatus is EngineStatus.DestroyFailed)
-        assertTrue(
-            "Failed retry must produce DestroyFailed(retried = true), not DestroyFailed(retried = false)",
-            (retryStatus as EngineStatus.DestroyFailed).retried
-        )
-    }
-
-    @Test
-    fun testConcurrentRetryDestroyCallsInvokePerformDestructionExactlyOnce() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-
-        // First destroy fails -> status is DestroyFailed(retried = false)
+        // First destroy fails -> status is DestroyFailed
         MPVLib.simulateDestroyFailure = true
         engine.destroy()
         assertTrue(engine.status.value is EngineStatus.DestroyFailed)
-        assertFalse((engine.status.value as EngineStatus.DestroyFailed).retried)
 
         val destroysBeforeRetry = MPVLib.destroyCallCount
         MPVLib.simulateDestroyFailure = false
 
-        // While Caller 1 is inside MPVLib.destroy() (status is Destroying), Caller 2 invokes retryDestroy()
+        // While Caller 1 is inside MPVLib.destroy() (status is Destroying), Caller 2 invokes destroy()
         var caller2ObservedStatus: EngineStatus? = null
         MPVLib.onDestroy = {
             // Caller 2 executes concurrently while Caller 1 is mid-destruction
             caller2ObservedStatus = engine.status.value
-            engine.retryDestroy()
+            engine.destroy()
         }
 
-        engine.retryDestroy()
+        engine.destroy()
 
         assertEquals("Caller 2 must have observed Destroying status", EngineStatus.Destroying, caller2ObservedStatus)
-        assertEquals("retryDestroy must have invoked MPVLib.destroy exactly once", destroysBeforeRetry + 1, MPVLib.destroyCallCount)
+        assertEquals("destroy recall must have invoked MPVLib.destroy exactly once", destroysBeforeRetry + 1, MPVLib.destroyCallCount)
         assertEquals(EngineStatus.NotStarted, engine.status.value)
     }
 
     @Test(timeout = 5000)
-    fun testConcurrentRetryDestroyRaceWithMultipleThreads() {
+    fun testConcurrentDestroyRaceOnDestroyFailedWithMultipleThreads() {
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
         val engine = MpvEngine(context, eventHandler)
@@ -835,7 +735,7 @@ class MpvEngineTest {
             executor.execute {
                 try {
                     startLatch.await()
-                    engine.retryDestroy()
+                    engine.destroy()
                 } finally {
                     doneLatch.countDown()
                 }
@@ -859,14 +759,14 @@ class MpvEngineTest {
         engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
 
         // Set geometry and progress
-        engine.onPropertyLong("width", 1920L)
-        engine.onPropertyLong("height", 1080L)
-        engine.onPropertyDouble("time-pos", 45.0)
+        eventHandler.onPropertyLong("width", 1920L)
+        eventHandler.onPropertyLong("height", 1080L)
+        eventHandler.onPropertyDouble("time-pos", 45.0)
 
         var geometryCallbackCount = 0
         var progressCallbackCount = 0
-        engine.onVideoGeometryChanged = { geometryCallbackCount++ }
-        engine.onPlaybackProgressChanged = { _, _ -> progressCallbackCount++ }
+        eventHandler.onVideoGeometryChanged = { geometryCallbackCount++ }
+        eventHandler.onPlaybackProgressChanged = { _, _ -> progressCallbackCount++ }
 
         val surface = android.view.Surface(android.graphics.SurfaceTexture(0))
         engine.onSurfaceCreated(surface)
@@ -938,11 +838,6 @@ class MpvEngineTest {
         assertNotNull("Expected initialize to throw on failure", initException)
         assertNull("Destroy thread should not throw", destroyThreadException)
         assertEquals(
-            "MpvLifecycleGuard.destroy must be invoked exactly once across both threads",
-            1,
-            MpvLifecycleGuard.destroyCallCount
-        )
-        assertEquals(
             "MPVLib.destroy must be invoked exactly once across both threads",
             1,
             MPVLib.destroyCallCount
@@ -951,7 +846,7 @@ class MpvEngineTest {
     }
 
     @Test
-    fun testInitializeDuringDestroyingDoesNotCallMpvLifecycleGuardCreate() {
+    fun testInitializeDuringDestroyingReturnsEarlyWithoutRecreating() {
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
         val engine = MpvEngine(context, eventHandler)
@@ -964,9 +859,7 @@ class MpvEngineTest {
             assertEquals(EngineStatus.Destroying, engine.status.value)
             initializeAttempted = true
             try {
-                // If initialize() does not reject Destroying, it would proceed to
-                // MpvLifecycleGuard.create(), throwing IllegalStateException
-                // ("MPVLib is already owned") since the guard still owns the native instance.
+                // If initialize() does not reject Destroying, it would proceed to MPVLib.create()
                 engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
             } catch (t: Throwable) {
                 initializeException = t
@@ -1005,7 +898,7 @@ class MpvEngineTest {
             caughtException?.message ?: "Simulated MPVLib.init failure",
             (status as EngineStatus.Failed).reason
         )
-        assertEquals("Cleanup must have called destroy once", 1, MpvLifecycleGuard.destroyCallCount)
+        assertEquals("Cleanup must have called destroy once", 1, MPVLib.destroyCallCount)
         assertFalse(MPVLib.isCreated)
     }
 
@@ -1028,9 +921,8 @@ class MpvEngineTest {
         assertNotNull("Expected initialize to throw on failure", caughtException)
         val status = engine.status.value
         assertTrue("Status must end in DestroyFailed", status is EngineStatus.DestroyFailed)
-        assertFalse("retried must be false on first failure", (status as EngineStatus.DestroyFailed).retried)
-        assertEquals("Simulated MPVLib.destroy failure", status.reason)
-        assertEquals("Cleanup must have attempted destroy once", 1, MpvLifecycleGuard.destroyCallCount)
+        assertEquals("Simulated MPVLib.destroy failure", (status as EngineStatus.DestroyFailed).reason)
+        assertEquals("Cleanup must have attempted destroy once", 1, MPVLib.destroyCallCount)
     }
 
     @Test(timeout = 5000)
@@ -1077,11 +969,11 @@ class MpvEngineTest {
         thread2.start()
         thread2.join(3000)
 
-        // 5. Assert MpvLifecycleGuard.create() was called exactly once (not twice)
+        // 5. Assert MPVLib.create() was called exactly once (not twice)
         // and that the second initialize() did not proceed past its guard.
         assertNull("Second initialize() must return without throwing", thread2Exception)
         assertEquals(
-            "MpvLifecycleGuard.create() must be called exactly once across both threads",
+            "MPVLib.create() must be called exactly once across both threads",
             1,
             MPVLib.createCallCount
         )

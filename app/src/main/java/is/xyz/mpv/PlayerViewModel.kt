@@ -34,11 +34,6 @@ data class PlayerUiState(
     val isEngineReady: Boolean get() = engineStatus is EngineStatus.Ready
 }
 
-data class PlaybackProgress(
-    val positionSec: Double = 0.0,
-    val durationSec: Double = 0.0,
-)
-
 /** Ingredients PlayerActivity needs to resolve + apply orientation. Dumb data only. */
 data class OrientationState(
     val mode: OrientationMode = OrientationMode.AUTO_BY_VIDEO,
@@ -145,12 +140,16 @@ class PlayerViewModel(
 
     init {
         MPVLib.addLogObserver(logObserver)
-        engine.onVideoGeometryChanged = { geometry ->
-            Log.i(TAG, "Geometry changed: ${geometry.width}x${geometry.height}, rot=${geometry.rotationDegrees}")
-            _videoGeometry.update { geometry }
+        scope.launch {
+            eventHandler.videoGeometry.collect { geometry ->
+                Log.i(TAG, "Geometry changed: ${geometry.width}x${geometry.height}, rot=${geometry.rotationDegrees}")
+                _videoGeometry.value = geometry
+            }
         }
-        engine.onPlaybackProgressChanged = { pos, dur ->
-            _playbackProgress.update { PlaybackProgress(positionSec = pos, durationSec = dur) }
+        scope.launch {
+            eventHandler.playbackProgress.collect { progress ->
+                _playbackProgress.value = progress
+            }
         }
         // FIX #3: Combine engine.status with committed subtitle preferences to re-apply on preference emission when Ready
         scope.launch {

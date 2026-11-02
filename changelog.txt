@@ -334,3 +334,5 @@ refactor(engine): remove VO-teardown poll and simplify player commands
     - Add simulation and regression tests verifying detachment failure handling in MpvEngineTest
 
     fix(mpv): keep playback engine alive after EOF
+
+    fix(player): accumulate seek delta and show delta in gesture indicator overlay

@@ -119,8 +119,6 @@ object MPVLib {
         createCallCount = 0
         isCreated = false
         onDestroy = null
-        // FIX CHECK-A: Reset lifecycle guard between unit tests
-        MpvLifecycleGuard.resetForTesting()
     }
 
     @JvmStatic

@@ -7,6 +7,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
+/**
+ * Snapshot of video geometry, as last reported by mpv.
+ * All zero/default until the first file has loaded and reported dimensions.
+ */
+data class VideoGeometry(
+    val width: Int = 0,
+    val height: Int = 0,
+    val rotationDegrees: Int = 0,
+)
+
+data class PlaybackProgress(
+    val positionSec: Double = 0.0,
+    val durationSec: Double = 0.0,
+)
+
 enum class TrackType {
     Audio,
     Subtitle
@@ -31,8 +46,9 @@ data class TrackState(
 
 /**
  * Handles raw MPV property-change events for audio and subtitle tracks ("track-list", "aid", "sid"),
- * as well as playback pause and media-title events ("pause", "media-title"), translating them
- * into typed, observable [TrackState].
+ * playback pause and media-title events ("pause", "media-title"), video geometry ("width", "height",
+ * "video-rotate"), and playback progress ("time-pos", "duration"), translating them into typed,
+ * observable StateFlows.
  *
  * Precedence note on mediaTitle:
  * EngineEventHandler acts solely as an event translation layer for MPV native events and does not
@@ -42,8 +58,31 @@ data class TrackState(
  */
 class EngineEventHandler : MPVLib.EventObserver {
 
+    /** Called whenever mpv reports a change to width, height, or rotation. */
+    var onVideoGeometryChanged: ((VideoGeometry) -> Unit)? = null
+
+    /** Called whenever mpv reports a change to position or duration. */
+    var onPlaybackProgressChanged: ((positionSec: Double, durationSec: Double) -> Unit)? = null
+
     private val _trackState = MutableStateFlow(TrackState())
     val trackState: StateFlow<TrackState> = _trackState.asStateFlow()
+
+    private val _videoGeometry = MutableStateFlow(VideoGeometry())
+    val videoGeometry: StateFlow<VideoGeometry> = _videoGeometry.asStateFlow()
+    val geometry: StateFlow<VideoGeometry> get() = videoGeometry
+
+    private val _playbackProgress = MutableStateFlow(PlaybackProgress())
+    val playbackProgress: StateFlow<PlaybackProgress> = _playbackProgress.asStateFlow()
+    val progress: StateFlow<PlaybackProgress> get() = playbackProgress
+
+    var currentGeometry: VideoGeometry = VideoGeometry()
+        private set
+
+    var currentPositionSec: Double = 0.0
+        private set
+
+    var currentDurationSec: Double = 0.0
+        private set
 
     override fun eventProperty(property: String, value: MPVNode) {
         if (property == "track-list") {
@@ -69,15 +108,77 @@ class EngineEventHandler : MPVLib.EventObserver {
     }
 
     override fun eventProperty(property: String, value: Long) {
+        if (onPropertyLong(property, value)) return
         when (property) {
             "aid" -> handleAid(value.toString())
             "sid" -> handleSid(value.toString())
         }
     }
 
+    override fun eventProperty(property: String, value: Double) {
+        onPropertyDouble(property, value)
+    }
+
+    /**
+     * Feed a geometry-relevant property update in.
+     *
+     * Returns true if the property was consumed (was a geometry property).
+     */
+    fun onPropertyLong(property: String, value: Long): Boolean {
+        val next = when (property) {
+            "width" -> currentGeometry.copy(width = value.toInt())
+            "height" -> currentGeometry.copy(height = value.toInt())
+            "video-rotate" -> currentGeometry.copy(rotationDegrees = value.toInt())
+            else -> return false
+        }
+        currentGeometry = next
+        _videoGeometry.value = next
+        onVideoGeometryChanged?.invoke(next)
+        return true
+    }
+
+    /**
+     * Feed a progress-relevant property update in.
+     *
+     * Returns true if the property was consumed.
+     */
+    fun onPropertyDouble(property: String, value: Double): Boolean {
+        when (property) {
+            "time-pos" -> currentPositionSec = value
+            "duration" -> currentDurationSec = value
+            else -> return false
+        }
+        val next = PlaybackProgress(currentPositionSec, currentDurationSec)
+        _playbackProgress.value = next
+        onPlaybackProgressChanged?.invoke(currentPositionSec, currentDurationSec)
+        return true
+    }
+
+    /** Reset geometry when a new file starts loading, so stale dims aren't briefly reused. */
+    fun clearGeometry() {
+        val reset = VideoGeometry()
+        currentGeometry = reset
+        _videoGeometry.value = reset
+        onVideoGeometryChanged?.invoke(reset)
+    }
+
+    /** Reset progress when a new file starts loading. */
+    fun clearProgress() {
+        currentPositionSec = 0.0
+        currentDurationSec = 0.0
+        val reset = PlaybackProgress(0.0, 0.0)
+        _playbackProgress.value = reset
+        onPlaybackProgressChanged?.invoke(0.0, 0.0)
+    }
+
     fun reset() {
-        Log.d(TAG, "Resetting track and playback state")
+        Log.d(TAG, "Resetting track, geometry, and playback state")
         _trackState.value = TrackState()
+        currentGeometry = VideoGeometry()
+        currentPositionSec = 0.0
+        currentDurationSec = 0.0
+        _videoGeometry.value = VideoGeometry()
+        _playbackProgress.value = PlaybackProgress()
     }
 
     fun handleTrackListNode(node: MPVNode) {

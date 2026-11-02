@@ -200,4 +200,95 @@ class EngineEventHandlerTest {
         assertNull(parsed[0].lang)
         assertNull(parsed[0].title)
     }
+
+    @Test
+    fun testGeometryAndProgressStateFlowsAndPropertyUpdates() {
+        val handler = EngineEventHandler()
+
+        var callbackGeometry: VideoGeometry? = null
+        var callbackPos: Double? = null
+        var callbackDur: Double? = null
+
+        handler.onVideoGeometryChanged = { callbackGeometry = it }
+        handler.onPlaybackProgressChanged = { pos, dur ->
+            callbackPos = pos
+            callbackDur = dur
+        }
+
+        // Test geometry Long property updates
+        assertTrue(handler.onPropertyLong("width", 1920L))
+        assertEquals(1920, handler.currentGeometry.width)
+        assertEquals(1920, handler.videoGeometry.value.width)
+        assertEquals(1920, handler.geometry.value.width)
+        assertEquals(1920, callbackGeometry?.width)
+
+        assertTrue(handler.onPropertyLong("height", 1080L))
+        assertEquals(1080, handler.currentGeometry.height)
+        assertEquals(1080, handler.videoGeometry.value.height)
+        assertEquals(1080, callbackGeometry?.height)
+
+        assertTrue(handler.onPropertyLong("video-rotate", 180L))
+        assertEquals(180, handler.currentGeometry.rotationDegrees)
+        assertEquals(180, handler.videoGeometry.value.rotationDegrees)
+        assertEquals(180, callbackGeometry?.rotationDegrees)
+
+        // Unknown Long property is not consumed
+        assertFalse(handler.onPropertyLong("unknown-prop", 42L))
+
+        // Test progress Double property updates
+        assertTrue(handler.onPropertyDouble("time-pos", 12.5))
+        assertEquals(12.5, handler.currentPositionSec, 0.001)
+        assertEquals(12.5, handler.playbackProgress.value.positionSec, 0.001)
+        assertEquals(12.5, handler.progress.value.positionSec, 0.001)
+        assertEquals(12.5, callbackPos ?: 0.0, 0.001)
+
+        assertTrue(handler.onPropertyDouble("duration", 300.0))
+        assertEquals(300.0, handler.currentDurationSec, 0.001)
+        assertEquals(300.0, handler.playbackProgress.value.durationSec, 0.001)
+        assertEquals(300.0, handler.progress.value.durationSec, 0.001)
+        assertEquals(300.0, callbackDur ?: 0.0, 0.001)
+
+        // Unknown Double property is not consumed
+        assertFalse(handler.onPropertyDouble("unknown-prop", 3.14))
+    }
+
+    @Test
+    fun testClearGeometryClearProgressAndReset() {
+        val handler = EngineEventHandler()
+        val context = object : ContextWrapper(null) {
+            override fun getApplicationContext(): Context = this
+        }
+        val engine = MpvEngine(context, handler)
+
+        // Set non-default geometry and progress
+        handler.onPropertyLong("width", 1280L)
+        handler.onPropertyLong("height", 720L)
+        handler.onPropertyDouble("time-pos", 50.0)
+        handler.onPropertyDouble("duration", 100.0)
+
+        assertEquals(1280, handler.geometry.value.width)
+        assertEquals(50.0, handler.progress.value.positionSec, 0.001)
+
+        // 1. clearGeometry()
+        handler.clearGeometry()
+        assertEquals(VideoGeometry(), handler.geometry.value)
+        assertEquals(VideoGeometry(), handler.currentGeometry)
+
+        // 2. clearProgress()
+        handler.clearProgress()
+        assertEquals(PlaybackProgress(0.0, 0.0), handler.progress.value)
+        assertEquals(0.0, handler.currentPositionSec, 0.001)
+        assertEquals(0.0, handler.currentDurationSec, 0.001)
+
+        // 3. Set state again and test engine.playFile() calls reset() which clears all
+        handler.onPropertyLong("width", 1920L)
+        handler.onPropertyDouble("time-pos", 75.0)
+        handler.eventProperty("aid", "1")
+
+        engine.playFile("/path/to/video.mp4")
+
+        assertEquals(VideoGeometry(), handler.geometry.value)
+        assertEquals(PlaybackProgress(0.0, 0.0), handler.progress.value)
+        assertNull(handler.trackState.value.selectedAudioId)
+    }
 }
