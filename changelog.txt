@@ -336,3 +336,18 @@ refactor(engine): remove VO-teardown poll and simplify player commands
     fix(mpv): keep playback engine alive after EOF
 
     fix(player): accumulate seek delta and show delta in gesture indicator overlay
+
+
+
+    refactor(engine): simplify lifecycle destruction and delegate event handling
+
+- Collapse destroy() and retryDestroy() into a single destroy() path capable of retry on recall
+- Remove EngineStatus.DestroyFailed.retried flag and separate retryDestroy() method
+- Remove duplicate pause property observation in loadFile()
+- Remove MpvLifecycleGuard and manage native MPVLib instance directly
+- Delegate video geometry and playback progress state management to EngineEventHandler
+- Remove intrinsic lock from MpvEngine in favor of main thread confinement
+- Align unit tests in MpvEngineTest and EngineEventHandlerTest with updated lifecycle and event state
+
+commit aa593c9
+fix(engine): sync pause state on load to avoid disabled play button
