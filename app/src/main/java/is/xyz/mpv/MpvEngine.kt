@@ -50,6 +50,7 @@ open class MpvEngine(
     private var pendingSurfaceSize: Pair<Int, Int>? = null
     private var filePath: String? = null
     private var voInUse: String = "gpu"
+    private val optionsConfigurator = MpvOptionsConfigurator(appContext)
 
     /**
      * Initialize libmpv.
@@ -272,8 +273,13 @@ open class MpvEngine(
         return destroyError
     }
 
-    protected open fun initOptions() {}
-    protected open fun postInitOptions() {}
+    protected open fun initOptions() {
+        voInUse = optionsConfigurator.configure(MpvOptions())
+    }
+
+    protected open fun postInitOptions() {
+        optionsConfigurator.configurePostInit()
+    }
 
     protected open fun observeProperties() {
         MPVLib.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)

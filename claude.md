@@ -29,7 +29,7 @@ No ExoPlayer. No XML layouts. No Hilt. No navigation framework.
 | `PlayScreen.kt` | Root composable — `Box` stacking video + bars |
 | `PlayerViewModel.kt` | Coordinates engine commands; consumes state from `EngineEventHandler`; does not register with `MPVLib` directly |
 | `MpvEngine.kt` | MPV init, surface attach, observer registration, file loading, playback commands |
-| `MpvLifecycleGuard.kt` | Sole authority on native instance ownership; only caller of `MPVLib.destroy()` |
+| `
 | `EngineEventHandler.kt` | Translates native property events into typed `StateFlow`s; owns track state, pause state, media title |
 | `MPVLib.kt` | JNI bridge — all native calls go here; do not modify |
 | `PlayerTopBar.kt` | Top overlay bar composable |
@@ -77,7 +77,7 @@ MPVLib  →  MpvLifecycleGuard  →  MpvEngine + EngineEventHandler  →  Player
 | Component | Owns |
 | --- | --- |
 | `MPVLib` | JNI/native API boundary; unchanged |
-| `MpvLifecycleGuard` | Sole authority on native instance ownership; only caller of `MPVLib.destroy()`; retains ownership if destroy throws |
+| `
 | `MpvEngine` | Native lifecycle, init/teardown, observer registration, surface, file loading, playback commands |
 | `EngineEventHandler` | Event-to-state translation; track state, pause state, media title, selected IDs; resets on file switch |
 | `PlayerViewModel` | Engine command dispatch; consumes `EngineEventHandler` state; no direct `MPVLib` registration |
@@ -94,7 +94,7 @@ MPVLib  →  MpvLifecycleGuard  →  MpvEngine + EngineEventHandler  →  Player
 
 ## Known Architecture Decisions
 
-- **Pause state**: driven entirely by `observeProperty("pause", MPV_FORMAT_FLAG)` callback. `togglePlayPause()` sends the command only — no optimistic state update.
+- **Pause state**: driven by `observeProperty("pause", MPV_FORMAT_FLAG)` callback for all in-session changes. `togglePlayPause()` sends the command only — no optimistic state update. One narrow, deliberate exception: `MpvEngine.loadFile()` does a single synchronous `MPVLib.getPropertyBoolean("pause")` read immediately after the `loadfile` command and pushes it into `EngineEventHandler` via `syncPauseState()`. This exists because `observeProperty` fires the current value once on registration, then only again on *change* — if pause state doesn't change across a file load, `isPaused` would otherwise stay `null` indefinitely, not just briefly, permanently disabling the play/pause button. It still reads mpv's real current state, not a guess — one-shot, not polling. Do not generalize `syncPauseState()` into other call sites without the same justification.
 - **`isPlaying` is `Boolean?`**: `null` = engine state not yet known (before first MPV pause event), `true` = playing, `false` = paused. The UI renders a loading spinner and disables the play/pause button when `null`. Do not collapse `null` to `false`.
 - **Track state reset**: `EngineEventHandler.reset()` is called at the start of `MpvEngine.playFile()` to clear stale track list, selected IDs, and media title before a new file loads.
 - **Controls visibility**: transient UI state, lives in `PlayScreen` (not ViewModel). Single tap toggles. Auto-hides after 5 seconds via coroutine in `LaunchedEffect`.

@@ -45,13 +45,7 @@ MPVLib  →  MpvLifecycleGuard  →  MpvEngine + EngineEventHandler  →  Player
 - Sole path for all JNI and native calls.
 - Dispatches raw property events to registered observers.
 
-**`MpvLifecycleGuard`** — Sole authority on native instance ownership.
-
-- Tracks which `MpvEngine` instance, if any, currently owns the single native MPV instance.
-- `MPVLib.destroy()` is called **only** from inside `MpvLifecycleGuard.destroy()`. No other class calls it, including `MpvEngine` — `MpvEngine` always goes through the Guard.
-- Releases ownership only after `MPVLib.destroy()` returns successfully. If it throws, the Guard deliberately retains ownership rather than guessing the native instance is gone.
-- Do not add a second ownership flag anywhere else (e.g. an `ownsNativeInstance` bool on `MpvEngine`). The Guard's `owner` field is the single source of truth — duplicating it was explicitly rejected during the destroy-failure lifecycle fix.
-- Lock-ordering rule (see comment in the file): any caller holding `MpvEngine.lock` before entering a `@Synchronized` method on the Guard must never acquire `MpvEngine.lock` again from inside the Guard. Current call paths (`initialize`, `destroy`, `retryDestroy`) all acquire `MpvEngine.lock` first, then the Guard's intrinsic lock. Preserve this order in any new call site.
+-
 
 **`MpvEngine`** — Native lifecycle and commands.
 
@@ -64,6 +58,7 @@ MPVLib  →  MpvLifecycleGuard  →  MpvEngine + EngineEventHandler  →  Player
 - Converts native property events into typed `StateFlow`s.
 - Owns: audio/subtitle track state, pause state, media title, selected track IDs.
 - Resets all state on `reset()`.
+- `syncPauseState(isPaused: Boolean)` is the one sanctioned non-event write into pause state. Called only from `MpvEngine.loadFile()`, once, right after the `loadfile` command, to sync mpv's real current pause value — because `observeProperty` won't re-fire if the value hasn't changed since the last file. It reads mpv's actual state via `MPVLib.getPropertyBoolean`, not a guess; it is not polling and not a second owner. Do not add further callers or widen it into a general-purpose setter.
 - `reset()` clears event-derived application state only. It must not initialize, destroy, or otherwise manage the native MPV instance.
 
 **`EngineStatus.DestroyFailed` — native destruction failure handling:**
@@ -83,7 +78,7 @@ MPVLib  →  MpvLifecycleGuard  →  MpvEngine + EngineEventHandler  →  Player
 5. One authoritative state per concern. `isEngineReady` derives from `engineStatus`; `isPlaying` is nullable `Boolean?` — `null` is a real state meaning "not yet known," not a bug.
 6. Loading a new file resets stale track/playback state via `eventHandler.reset()` in `playFile()`.
 7. No premature abstractions. Do not split out audio/subtitle controllers or add a new layer without a concrete failing requirement.
-8. `MpvLifecycleGuard` is the sole owner of native-instance ownership tracking. Do not duplicate it with a second flag on `MpvEngine` or elsewhere.
+8.
 9. `DestroyFailed` recovery goes through `retryDestroy()` only, capped at one attempt. Do not add automatic retries or a retry counter.
 
 ### Activity
