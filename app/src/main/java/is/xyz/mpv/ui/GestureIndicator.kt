@@ -25,8 +25,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+enum class SeekSource {
+    DOUBLE_TAP,
+    SWIPE,
+}
+
 sealed interface GestureIndicator {
-    data class Seek(val deltaSec: Double, val targetPositionSec: Double) : GestureIndicator
+    data class Seek(
+        val deltaSec: Double,
+        val targetPositionSec: Double,
+        val source: SeekSource = SeekSource.SWIPE
+    ) : GestureIndicator
     data class Volume(val level: Int, val max: Int) : GestureIndicator
     data class Brightness(val level: Float) : GestureIndicator
     data class Speed(val multiplier: Float) : GestureIndicator
@@ -47,11 +56,31 @@ fun GestureIndicatorOverlay(
         if (indicator == null) return@AnimatedVisibility
 
         if (indicator is GestureIndicator.Seek) {
-            Text(
-                text = TimeFormatter.formatDelta(indicator.deltaSec),
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
+            when (indicator.source) {
+                SeekSource.DOUBLE_TAP -> {
+                    Text(
+                        text = TimeFormatter.formatDelta(indicator.deltaSec),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                SeekSource.SWIPE -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = TimeFormatter.formatDelta(indicator.deltaSec),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "[${TimeFormatter.formatTime(indicator.targetPositionSec)}]",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
             return@AnimatedVisibility
         }
 

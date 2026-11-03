@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
+import `is`.xyz.mpv.ui.SeekSource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -42,7 +43,7 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun Modifier.playerGestureHandler(
-    onSeekBy: (Double) -> Unit,
+    onSeekBy: (delta: Double, source: SeekSource) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onZoomBy: (Float) -> Unit,
     onSingleTap: (() -> Unit)? = null,
@@ -82,8 +83,8 @@ fun Modifier.playerGestureHandler(
                 },
                 onDoubleTap = { position ->
                     when {
-                        position.x <= size.width * 0.28f -> currentOnSeekBy.value(-10.0)
-                        position.x >= size.width * 0.72f -> currentOnSeekBy.value(10.0)
+                        position.x <= size.width * 0.28f -> currentOnSeekBy.value(-10.0, SeekSource.DOUBLE_TAP)
+                        position.x >= size.width * 0.72f -> currentOnSeekBy.value(10.0, SeekSource.DOUBLE_TAP)
                         else -> currentOnDoubleTap.value?.invoke()
                     }
                 },
@@ -193,7 +194,8 @@ fun Modifier.playerGestureHandler(
                         GestureMode.SEEK -> {
                             val width = size.width.toFloat().coerceAtLeast(1f)
                             currentOnSeekBy.value(
-                                (pan.x / width * seekSecondsPerFullWidth).toDouble()
+                                (pan.x / width * seekSecondsPerFullWidth).toDouble(),
+                                SeekSource.SWIPE
                             )
                         }
 

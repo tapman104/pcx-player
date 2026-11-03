@@ -41,6 +41,7 @@ import `is`.xyz.mpv.ui.GestureIndicator
 import `is`.xyz.mpv.ui.GestureIndicatorOverlay
 import `is`.xyz.mpv.ui.PlayerBottomBar
 import `is`.xyz.mpv.ui.PlayerTopBar
+import `is`.xyz.mpv.ui.SeekSource
 import `is`.xyz.mpv.ui.SubtitleTrackSheet
 import `is`.xyz.mpv.ui.VideoSurface
 import kotlinx.coroutines.Job
@@ -152,7 +153,7 @@ fun PlayScreen(
                             if (controlsVisible) resetHideTimer()
                         }
                     },
-                    onSeekBy = { delta ->
+                    onSeekBy = { delta, source ->
                         val previousSeek = indicator as? GestureIndicator.Seek
                         val currentPosition = viewModel.playbackProgress.value.positionSec
                         val duration = viewModel.playbackProgress.value.durationSec
@@ -169,7 +170,8 @@ fun PlayScreen(
 
                         indicator = GestureIndicator.Seek(
                             deltaSec = target - startPosition,
-                            targetPositionSec = target
+                            targetPositionSec = target,
+                            source = source
                         )
 
                         viewModel.seekBy(delta)
