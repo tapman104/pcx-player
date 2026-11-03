@@ -5,10 +5,17 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import `is`.xyz.mpv.ui.PotatoTheme
 
 /**
@@ -18,6 +25,10 @@ import `is`.xyz.mpv.ui.PotatoTheme
 class MainActivity : ComponentActivity() {
 
     private lateinit var openDocumentLauncher: ActivityResultLauncher<Array<String>>
+
+    private val preferencesRepository by lazy {
+        UserPreferencesRepository(applicationContext)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,12 +51,36 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
 
         setContent {
-            PotatoTheme {
-                HomeScreen(
-                    onOpenFileClick = {
-                        openDocumentLauncher.launch(arrayOf("video/*"))
-                    }
-                )
+            val themeMode by preferencesRepository.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+            val amoledEnabled by preferencesRepository.amoledEnabled.collectAsState(initial = false)
+
+            val darkTheme = when (themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+
+            PotatoTheme(
+                darkTheme = darkTheme,
+                amoled = darkTheme && amoledEnabled,
+            ) {
+                var showSettings by remember { mutableStateOf(false) }
+
+                BackHandler(enabled = showSettings) {
+                    showSettings = false
+                }
+
+                if (showSettings) {
+                    SettingsScreen(
+                        preferencesRepository = preferencesRepository,
+                        onBackClick = { showSettings = false }
+                    )
+                } else {
+                    HomeScreen(
+                        onOpenFileClick = { openDocumentLauncher.launch(arrayOf("video/*")) },
+                        onSettingsClick = { showSettings = true }
+                    )
+                }
             }
         }
     }
