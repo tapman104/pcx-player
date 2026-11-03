@@ -369,3 +369,7 @@ feat(settings): add Settings screen with theme and decoder preferences
   Note: selections persist via DataStore but are not yet applied —
   ThemeMode is not wired to PotatoTheme and DecoderMode is not wired to
   MpvOptionsConfigurator/engine. Both are separate follow-up phases.
+
+  feat(settings): add player settings screen and preferences
+
+  feat(player): improve seek gesture feedback
