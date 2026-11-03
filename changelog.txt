@@ -351,3 +351,21 @@ refactor(engine): remove VO-teardown poll and simplify player commands
 
 commit aa593c9
 fix(engine): sync pause state on load to avoid disabled play button
+
+03.11.2026
+
+feat(engine): implement and wire MpvOptionsConfigurator
+
+
+feat(settings): add Settings screen with theme and decoder preferences
+
+  - Add Settings FAB to HomeScreen, wired to MainActivity via local state
+    with BackHandler for system back navigation
+  - Add preferencesRepository instance to MainActivity
+  - Extend UserPreferencesRepository with ThemeMode and DecoderMode
+    DataStore-backed preferences (SYSTEM/LIGHT/DARK, AUTO/HARDWARE/SOFTWARE)
+  - Add SettingsScreen with radio button selection for both preferences
+
+  Note: selections persist via DataStore but are not yet applied —
+  ThemeMode is not wired to PotatoTheme and DecoderMode is not wired to
+  MpvOptionsConfigurator/engine. Both are separate follow-up phases.
