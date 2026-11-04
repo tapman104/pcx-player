@@ -52,12 +52,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import `is`.xyz.mpv.Track
+import java.util.Locale
 
 internal fun getTrackDisplayName(track: Track): String {
     return when {
         !track.title.isNullOrBlank() -> track.title.trim()
         !track.lang.isNullOrBlank() -> track.lang.trim()
         else -> "Track ${track.id}"
+    }
+}
+
+internal fun getLanguageDisplayName(langCode: String): String {
+    val display = Locale(langCode.lowercase()).getDisplayLanguage(Locale.ENGLISH)
+    return if (display.isBlank() || display.equals(langCode, ignoreCase = true)) {
+        langCode
+    } else {
+        display
     }
 }
 
@@ -187,7 +197,7 @@ fun AudioTrackSheet(
                                         )
                                         if (!track.title.isNullOrBlank() && !track.lang.isNullOrBlank() && !track.title.trim().equals(track.lang.trim(), ignoreCase = true)) {
                                             Text(
-                                                text = track.lang.trim(),
+                                                text = getLanguageDisplayName(track.lang.trim()),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -398,7 +408,7 @@ fun SubtitleTrackSheet(
                                             )
                                             if (!track.title.isNullOrBlank() && !track.lang.isNullOrBlank() && !track.title.trim().equals(track.lang.trim(), ignoreCase = true)) {
                                                 Text(
-                                                    text = track.lang.trim(),
+                                                    text = getLanguageDisplayName(track.lang.trim()),
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
