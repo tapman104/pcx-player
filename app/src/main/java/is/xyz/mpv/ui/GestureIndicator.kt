@@ -8,14 +8,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrightnessHigh
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.ZoomIn
@@ -62,36 +63,27 @@ fun GestureIndicatorOverlay(
         if (indicator is GestureIndicator.Seek) {
             when (indicator.source) {
                 SeekSource.DOUBLE_TAP -> {
-                    val icon = if (indicator.deltaSec < 0) {
-                        Icons.Filled.KeyboardArrowLeft
+                    val icon = if (indicator.deltaSec >= 0) {
+                        Icons.Filled.FastForward
                     } else {
-                        Icons.Filled.KeyboardArrowRight
+                        Icons.Filled.FastRewind
                     }
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                color = Color.Black.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .padding(12.dp)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(34.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = TimeFormatter.formatDelta(indicator.deltaSec),
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp
-                            )
-                        }
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = TimeFormatter.formatDelta(indicator.deltaSec),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp
+                        )
                     }
                 }
                 SeekSource.SWIPE -> {
@@ -101,12 +93,14 @@ fun GestureIndicatorOverlay(
                         Text(
                             text = TimeFormatter.formatDelta(indicator.deltaSec),
                             color = Color.White,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
                         )
                         Text(
                             text = "[${TimeFormatter.formatTime(indicator.targetPositionSec)}]",
                             color = Color.White,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp
                         )
                     }
                 }

@@ -384,3 +384,7 @@ feat(settings): add Settings screen with theme and decoder preferences
   "fixed homescreen theme error".
 
   feat: rebrand Potato Player to PCX Player with adaptive launcher icon
+
+  Committed a49e057:
+
+feat(player): improve swipe gestures and add icon to double-tap seek indicator
