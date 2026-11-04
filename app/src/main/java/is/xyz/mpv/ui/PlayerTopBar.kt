@@ -40,7 +40,7 @@ fun PlayerTopBar(
         TopAppBar(
             title = {
                 Text(
-                    text = if (!title.isNullOrBlank()) title else "Potato Player",
+                    text = if (!title.isNullOrBlank()) title else "PCX Player",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium,

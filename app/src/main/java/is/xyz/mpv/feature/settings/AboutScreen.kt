@@ -50,7 +50,7 @@ fun AboutScreen(
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
         ) {
-            AboutInfoRow(title = "Application", value = "Potato Player")
+            AboutInfoRow(title = "Application", value = "PCX Player")
             AboutInfoRow(title = "Version", value = BuildConfig.VERSION_NAME)
             AboutInfoRow(title = "Video Engine", value = "mpv / libmpv")
         }

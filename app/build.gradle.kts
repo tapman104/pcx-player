@@ -18,7 +18,7 @@ android {
 
     buildTypes {
         release {
-            resValue("string", "app_name", "Potato Smoke")
+            resValue("string", "app_name", "PCX Player")
             isMinifyEnabled = true
             isShrinkResources = false
             proguardFiles(
@@ -28,7 +28,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         debug {
-            resValue("string", "app_name", "Potato Smoke Debug")
+            resValue("string", "app_name", "PCX Player Debug")
         }
     }
 
