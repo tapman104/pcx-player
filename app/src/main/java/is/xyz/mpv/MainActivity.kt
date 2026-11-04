@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import `is`.xyz.mpv.feature.settings.SettingsScreen
 import `is`.xyz.mpv.ui.PotatoTheme
 
 /**
