@@ -396,6 +396,16 @@ open class MpvEngine(
         MPVLib.setPropertyString("sub-pos", pos.toString())
     }
 
+    fun setAudioLang(code: String?) {
+        if (!isReady) return
+        MPVLib.setPropertyString("alang", code.orEmpty())
+    }
+
+    fun setSubtitleLang(code: String?) {
+        if (!isReady) return
+        MPVLib.setPropertyString("slang", code.orEmpty())
+    }
+
     /**
      * Sets the VO to use.
      * It is automatically disabled/enabled when the surface dis-/appears.

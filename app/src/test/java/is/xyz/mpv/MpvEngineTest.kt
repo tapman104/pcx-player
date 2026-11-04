@@ -1,6 +1,8 @@
 package `is`.xyz.mpv
 
+import android.content.Context
 import android.content.ContextWrapper
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -16,8 +18,12 @@ import org.junit.Test
 class MpvEngineTest {
 
     private fun createTestContext(): ContextWrapper {
+        val testDir = File(System.getProperty("java.io.tmpdir"), "test_engine_${System.currentTimeMillis()}").apply { mkdirs() }
         return object : ContextWrapper(null) {
-            override fun getApplicationContext(): android.content.Context = this
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = testDir
+            override fun getCacheDir(): File = testDir
+            override fun getDataDir(): File = testDir
         }
     }
 

@@ -41,6 +41,8 @@ class UserPreferencesRepository(private val appContext: Context) {
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DECODER_MODE = stringPreferencesKey("decoder_mode")
         val AMOLED_ENABLED = booleanPreferencesKey("amoled_enabled")
+        val PREFERRED_AUDIO_LANG = stringPreferencesKey("preferred_audio_lang")
+        val PREFERRED_SUBTITLE_LANG = stringPreferencesKey("preferred_subtitle_lang")
     }
 
     /** Defaults to [OrientationMode.AUTO_BY_VIDEO] if unset or unparseable. */
@@ -70,6 +72,9 @@ class UserPreferencesRepository(private val appContext: Context) {
     val subFontSize: Flow<Int> = dataStore.data.map { it[Keys.SUB_FONT_SIZE] ?: 55 }
     val subPos: Flow<Int> = dataStore.data.map { it[Keys.SUB_POS] ?: 100 }
 
+    val preferredAudioLang: Flow<String?> = dataStore.data.map { it[Keys.PREFERRED_AUDIO_LANG] }
+    val preferredSubtitleLang: Flow<String?> = dataStore.data.map { it[Keys.PREFERRED_SUBTITLE_LANG] }
+
     suspend fun setOrientationMode(mode: OrientationMode) {
         dataStore.edit { prefs ->
             prefs[Keys.ORIENTATION_MODE] = mode.name
@@ -98,5 +103,25 @@ class UserPreferencesRepository(private val appContext: Context) {
 
     suspend fun setSubPos(pos: Int) {
         dataStore.edit { it[Keys.SUB_POS] = pos }
+    }
+
+    suspend fun setPreferredAudioLang(code: String?) {
+        dataStore.edit { prefs ->
+            if (code == null) {
+                prefs.remove(Keys.PREFERRED_AUDIO_LANG)
+            } else {
+                prefs[Keys.PREFERRED_AUDIO_LANG] = code
+            }
+        }
+    }
+
+    suspend fun setPreferredSubtitleLang(code: String?) {
+        dataStore.edit { prefs ->
+            if (code == null) {
+                prefs.remove(Keys.PREFERRED_SUBTITLE_LANG)
+            } else {
+                prefs[Keys.PREFERRED_SUBTITLE_LANG] = code
+            }
+        }
     }
 }

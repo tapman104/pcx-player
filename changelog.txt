@@ -373,3 +373,8 @@ feat(settings): add Settings screen with theme and decoder preferences
   feat(settings): add player settings screen and preferences
 
   feat(player): improve seek gesture feedback
+
+  04.11.2026
+
+
+  "fixed homescreen theme error".

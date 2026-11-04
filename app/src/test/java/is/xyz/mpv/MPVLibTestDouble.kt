@@ -80,8 +80,16 @@ object MPVLib {
     fun setPropertyDouble(property: String, value: Double) {}
     fun getPropertyBoolean(property: String): Boolean? = false
     fun setPropertyBoolean(property: String, value: Boolean) {}
-    fun getPropertyString(property: String): String? = null
-    fun setPropertyString(property: String, value: String) {}
+    val setPropertiesString = mutableMapOf<String, String>()
+    val setPropertyStringCalls = mutableListOf<Pair<String, String>>()
+
+    fun getPropertyString(property: String): String? = synchronized(setPropertiesString) { setPropertiesString[property] }
+    fun setPropertyString(property: String, value: String) {
+        synchronized(setPropertyStringCalls) {
+            setPropertyStringCalls.add(property to value)
+            setPropertiesString[property] = value
+        }
+    }
     fun getPropertyNode(property: String): MPVNode? = null
     fun setPropertyNode(property: String, node: MPVNode) {}
 
@@ -110,6 +118,10 @@ object MPVLib {
         }
         synchronized(loadedFiles) {
             loadedFiles.clear()
+        }
+        synchronized(setPropertyStringCalls) {
+            setPropertyStringCalls.clear()
+            setPropertiesString.clear()
         }
         simulateInitFailure = false
         simulatePostCreateFailure = false

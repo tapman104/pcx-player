@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
@@ -41,6 +42,26 @@ data class OrientationState(
     val videoHeight: Int = 0,
     val videoRotationDegrees: Int = 0,
 )
+
+private data class SubAndLangPrefs(
+    val status: EngineStatus,
+    val fontSize: Int,
+    val pos: Int,
+    val audioLang: String?,
+    val subLang: String?,
+)
+
+internal fun matchesLanguage(trackLang: String?, targetCode: String): Boolean {
+    if (trackLang.isNullOrBlank()) return false
+    val cleanedTrackLang = trackLang.trim()
+    if (cleanedTrackLang.equals(targetCode, ignoreCase = true)) return true
+    if (cleanedTrackLang.startsWith("$targetCode-", ignoreCase = true)) return true
+    val iso3 = runCatching { java.util.Locale.forLanguageTag(targetCode).isO3Language }.getOrNull()
+    if (iso3 != null && cleanedTrackLang.equals(iso3, ignoreCase = true)) return true
+    val trackIso2 = runCatching { java.util.Locale.forLanguageTag(cleanedTrackLang).language }.getOrNull()
+    if (trackIso2 != null && trackIso2.equals(targetCode, ignoreCase = true)) return true
+    return false
+}
 
 // ---------------------------------------------------------------------------
 // ViewModel
@@ -137,6 +158,10 @@ class PlayerViewModel(
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), 55)
     val subPos: StateFlow<Int> = preferencesRepository.subPos
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), 100)
+    val preferredAudioLang: StateFlow<String?> = preferencesRepository.preferredAudioLang
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
+    val preferredSubtitleLang: StateFlow<String?> = preferencesRepository.preferredSubtitleLang
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
         MPVLib.addLogObserver(logObserver)
@@ -151,20 +176,55 @@ class PlayerViewModel(
                 _playbackProgress.value = progress
             }
         }
-        // FIX #3: Combine engine.status with committed subtitle preferences to re-apply on preference emission when Ready
+        // FIX #3: Combine engine.status with committed subtitle and language preferences to re-apply on preference emission when Ready
         scope.launch {
             combine(
                 engine.status,
                 subFontSize,
                 subPos,
-            ) { status, fontSize, pos ->
-                Triple(status, fontSize, pos)
-            }.collect { (status, fontSize, pos) ->
+                preferredAudioLang,
+                preferredSubtitleLang,
+            ) { status, fontSize, pos, audioLang, subLang ->
+                SubAndLangPrefs(status, fontSize, pos, audioLang, subLang)
+            }.collect { (status, fontSize, pos, audioLang, subLang) ->
                 if (status is EngineStatus.Ready) {
                     engine.setSubFontSize(fontSize)
                     engine.setSubPos(pos)
+                    engine.setAudioLang(audioLang)
+                    engine.setSubtitleLang(subLang)
                 }
             }
+        }
+        // alang/slang/forced reselection are hints to mpv and only work when the
+        // file's own track metadata carries a matching language tag — no fallback
+        // chain needed, let mpv's own selection (or the match in (B)) handle it.
+        scope.launch {
+            combine(engine.status, preferredAudioLang) { s, lang -> s to lang }
+                .distinctUntilChanged()
+                .collect { (status, lang) ->
+                    if (status is EngineStatus.Ready && lang != null) {
+                        val matchingTrack = eventHandler.trackState.value.audioTracks.firstOrNull { track ->
+                            matchesLanguage(track.lang, lang)
+                        }
+                        if (matchingTrack != null) {
+                            engine.selectAudioTrack(matchingTrack.id)
+                        }
+                    }
+                }
+        }
+        scope.launch {
+            combine(engine.status, preferredSubtitleLang) { s, lang -> s to lang }
+                .distinctUntilChanged()
+                .collect { (status, lang) ->
+                    if (status is EngineStatus.Ready && lang != null) {
+                        val matchingTrack = eventHandler.trackState.value.subtitleTracks.firstOrNull { track ->
+                            matchesLanguage(track.lang, lang)
+                        }
+                        if (matchingTrack != null) {
+                            engine.selectSubtitleTrack(matchingTrack.id)
+                        }
+                    }
+                }
         }
         // FIX #5: Clear isLoadingNewFile when first post-load pause or track-list event arrives
         scope.launch {
@@ -276,6 +336,18 @@ class PlayerViewModel(
     fun commitSubPos(pos: Int) {
         scope.launch {
             preferencesRepository.setSubPos(pos)
+        }
+    }
+
+    fun commitAudioLang(code: String?) {
+        scope.launch {
+            preferencesRepository.setPreferredAudioLang(code)
+        }
+    }
+
+    fun commitSubtitleLang(code: String?) {
+        scope.launch {
+            preferencesRepository.setPreferredSubtitleLang(code)
         }
     }
 
