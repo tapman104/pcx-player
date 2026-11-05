@@ -18,6 +18,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import `is`.xyz.mpv.ui.SeekSource
 import kotlin.math.abs
@@ -48,6 +49,7 @@ fun Modifier.playerGestureHandler(
     onZoomBy: (Float) -> Unit,
     onSingleTap: (() -> Unit)? = null,
     onDoubleTap: (() -> Unit)? = null,
+    onSeekGestureStart: (() -> Unit)? = null,
     seekSecondsPerFullWidth: Float = 150f,
     getCurrentSpeed: (() -> Float)? = null,
     onVolumeChange: ((level: Int, max: Int) -> Unit)? = null,
@@ -63,12 +65,12 @@ fun Modifier.playerGestureHandler(
     val currentOnZoomBy = rememberUpdatedState(onZoomBy)
     val currentOnSingleTap = rememberUpdatedState(onSingleTap)
     val currentOnDoubleTap = rememberUpdatedState(onDoubleTap)
+    val currentOnSeekGestureStart = rememberUpdatedState(onSeekGestureStart)
     val currentGetCurrentSpeed = rememberUpdatedState(getCurrentSpeed)
     val currentOnVolumeChange = rememberUpdatedState(onVolumeChange)
     val currentOnBrightnessChange = rememberUpdatedState(onBrightnessChange)
 
-    var longPressActive = false
-    var gestureClaimed = false
+    val flags = remember { GestureFlags() }
 
     return this
         // Tap/long-press and swipe/pinch are in separate pointerInput modifiers so that
@@ -90,19 +92,19 @@ fun Modifier.playerGestureHandler(
                     }
                 },
                 onLongPress = {
-                    if (gestureClaimed) return@detectTapGestures
-                    longPressActive = true
+                    if (flags.gestureClaimed) return@detectTapGestures
+                    flags.longPressActive = true
                     currentOnSpeedChange.value(2f)
                 },
                 onPress = {
                     try {
-                        longPressActive = false
+                        flags.longPressActive = false
                         speedBeforeLongPress = currentGetCurrentSpeed.value?.invoke() ?: 1f
                         tryAwaitRelease()
                     } finally {
-                        if (longPressActive) {
+                        if (flags.longPressActive) {
                             currentOnSpeedChange.value(speedBeforeLongPress)
-                            longPressActive = false
+                            flags.longPressActive = false
                         }
                     }
                 }
@@ -121,14 +123,14 @@ fun Modifier.playerGestureHandler(
                 var startBrightness = 0.5f
 
                 val firstDownPosition = awaitFirstDown(requireUnconsumed = true).position
-                gestureClaimed = false
+                flags.gestureClaimed = false
 
                 do {
                     val event = awaitPointerEvent()
                     val pressedCount = event.changes.count { it.pressed }
 
                     if (pressedCount == 0) break
-                    if (longPressActive) continue
+                    if (flags.longPressActive) continue
 
                     val pan = event.calculatePan()
                     val zoom = event.calculateZoom()
@@ -161,6 +163,7 @@ fun Modifier.playerGestureHandler(
                         }
 
                         mode = if (abs(totalPanX) > abs(totalPanY)) {
+                            currentOnSeekGestureStart.value?.invoke()
                             GestureMode.SEEK
                         } else if (firstDownPosition.x < size.width / 2f) {
                             GestureMode.BRIGHTNESS
@@ -168,7 +171,7 @@ fun Modifier.playerGestureHandler(
                             GestureMode.VOLUME
                         }
 
-                        gestureClaimed = true
+                        flags.gestureClaimed = true
                         committedPanY = totalPanY
 
                         if (mode == GestureMode.SEEK) {
@@ -236,6 +239,11 @@ fun Modifier.playerGestureHandler(
                 } while (event.changes.any { it.pressed })
             }
         }
+}
+
+private class GestureFlags {
+    var longPressActive = false
+    var gestureClaimed = false
 }
 
 private enum class GestureMode {

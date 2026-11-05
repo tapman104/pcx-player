@@ -28,6 +28,19 @@ sealed interface SurfaceAttachmentState {
     data class DetachFailed(val exception: Throwable) : SurfaceAttachmentState
 }
 
+/**
+ * Core controller wrapping libmpv, managing engine lifecycle, surface attachment, and playback.
+ *
+ * Architectural Design:
+ * - Pending-file ownership: MpvEngine owns pending-file management. If playback is requested via
+ *   [playFile] before the engine is Ready or before the rendering surface is Attached, the path is
+ *   held as pending and loaded once both conditions are satisfied.
+ * - Threading contract: All engine lifecycle operations ([initialize], [destroy]), playback commands
+ *   ([playFile], seek, etc.), and surface lifecycle callbacks ([onSurfaceCreated], [onSurfaceChanged],
+ *   [onSurfaceDestroyed]) must execute on the same designated thread (currently the Android main thread).
+ *   MpvEngine state is not synchronized for concurrent multi-threaded access, and the pending-file
+ *   mechanism does not make cross-thread calls safe.
+ */
 open class MpvEngine(
     private val appContext: Context,
     private val eventHandler: EngineEventHandler,
@@ -48,14 +61,17 @@ open class MpvEngine(
 
     private var pendingSurface: Surface? = null
     private var pendingSurfaceSize: Pair<Int, Int>? = null
-    private var filePath: String? = null
+    // Holds the pending file path when playFile() is called before the engine is Ready and surface is Attached.
+    private var pendingFilePath: String? = null
     private var voInUse: String = "gpu"
     private val optionsConfigurator = MpvOptionsConfigurator(appContext)
 
     /**
      * Initialize libmpv.
      *
-     * Call this once before the view is shown.
+     * Call this once before the view is shown. Must be called from the designated main thread.
+     * Transitions engine status to [EngineStatus.Ready] on success and calls [flushPending] to attach
+     * any pending surface and load any pending file once prerequisites are satisfied.
      */
     fun initialize(configDir: String, cacheDir: String) {
         var nativeCreated = false
@@ -102,12 +118,13 @@ open class MpvEngine(
 
             _status.value = EngineStatus.Ready
             Log.i(TAG, "libmpv initialized successfully")
+            // Engine is now Ready; apply pending surface configuration and load any pending file.
             flushPending()
         } catch (e: Throwable) {
             eventHandler.onVideoGeometryChanged = null
             eventHandler.onPlaybackProgressChanged = null
             pendingSurface = null
-            filePath = null
+            pendingFilePath = null
             pendingSurfaceSize = null
             initException = e
             Log.e(TAG, "libmpv initialization failed: ${e.message}", e)
@@ -148,6 +165,10 @@ open class MpvEngine(
         MPVLib.observeProperty("sid", MPVLib.MpvFormat.MPV_FORMAT_STRING)
     }
 
+    /**
+     * Flushes queued surface size, attaches any pending surface (which loads any pending file),
+     * or loads the pending file directly if the surface was already attached.
+     */
     private fun flushPending() {
         pendingSurfaceSize?.let { (w, h) ->
             MPVLib.setPropertyString("android-surface-size", "${w}x$h")
@@ -158,13 +179,19 @@ open class MpvEngine(
         if (surfaceToAttach != null) {
             pendingSurface = null
             attachSurface(surfaceToAttach)
-        } else if (surfaceAttachmentState is SurfaceAttachmentState.Attached && filePath != null) {
-            val path = filePath as String
-            filePath = null
+        } else if (surfaceAttachmentState is SurfaceAttachmentState.Attached && pendingFilePath != null) {
+            val path = pendingFilePath as String
+            pendingFilePath = null
             loadFile(path)
         }
     }
 
+    /**
+     * Attaches the native rendering surface to libmpv.
+     *
+     * Sets surface attachment state to [SurfaceAttachmentState.Attached]. If a pending file was
+     * awaiting surface attachment while the engine is Ready, it is loaded immediately.
+     */
     private fun attachSurface(surface: Surface) {
         Log.w(TAG, "attaching surface")
         surfaceAttachmentState = SurfaceAttachmentState.Attached
@@ -176,9 +203,9 @@ open class MpvEngine(
         // We disable video output when the context disappears, enable it back unconditionally before any file load
         MPVLib.setPropertyString("vo", voInUse)
 
-        if (filePath != null) {
-            val path = filePath as String
-            filePath = null
+        if (pendingFilePath != null) {
+            val path = pendingFilePath as String
+            pendingFilePath = null
             loadFile(path)
         }
     }
@@ -225,7 +252,7 @@ open class MpvEngine(
         eventHandler.onVideoGeometryChanged = null
         eventHandler.onPlaybackProgressChanged = null
         pendingSurface = null
-        filePath = null
+        pendingFilePath = null
         pendingSurfaceSize = null
         if (surfaceAttachmentState is SurfaceAttachmentState.Attached && isReady) {
             detachSurface()
@@ -286,8 +313,15 @@ open class MpvEngine(
     }
 
     /**
-     * Set the file to be played. If the engine is ready and the surface is attached,
-     * it loads immediately; otherwise it is held as pending until ready and attached.
+     * Set the file to be played.
+     *
+     * MpvEngine owns pending-file management: if the engine is Ready and the rendering surface is
+     * Attached, the file loads immediately. Otherwise, it is stored as a pending file and loaded
+     * when both engine readiness and surface attachment conditions are satisfied.
+     *
+     * Threading contract: Must be called from the designated main thread. The pending-file
+     * mechanism handles lifecycle and surface readiness ordering; it does not make cross-thread
+     * access safe.
      */
     fun playFile(filePath: String) {
         if (_status.value is EngineStatus.Destroying) {
@@ -297,18 +331,15 @@ open class MpvEngine(
         eventHandler.clearGeometry()
         eventHandler.clearProgress()
         eventHandler.reset()
-        if (_status.value is EngineStatus.Destroying) {
-            return
-        }
         if (isReady && surfaceAttachmentState is SurfaceAttachmentState.Attached) {
-            this.filePath = null
+            pendingFilePath = null
             MPVLib.setPropertyString("vo", voInUse)
             loadFile(filePath)
         } else {
-            if (this.filePath != null) {
-                Log.w(TAG, "Pending file '${this.filePath}' discarded before load; overwriting with '$filePath'")
+            if (pendingFilePath != null) {
+                Log.w(TAG, "Pending file '$pendingFilePath' discarded before load; overwriting with '$filePath'")
             }
-            this.filePath = filePath
+            pendingFilePath = filePath
         }
     }
 
@@ -426,6 +457,13 @@ open class MpvEngine(
         }
     }
 
+    /**
+     * Callback when the rendering surface is created.
+     *
+     * If the engine is not yet Ready, holds the surface as pending until [initialize] calls [flushPending].
+     * Once Ready, attaches the surface immediately, satisfying the surface condition and loading any
+     * pending file. Must be called on the designated main thread.
+     */
     fun onSurfaceCreated(surface: Surface) {
         if (!isReady) {
             Log.i(TAG, "Surface created before engine is Ready; caching as pending")

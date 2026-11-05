@@ -77,6 +77,11 @@ class PlayerViewModel(
     private val eventHandler = EngineEventHandler()
 
     // -- engine is public so PlayScreen can hand it to MpvSurfaceView -------
+    // MpvEngine owns pending-file management and coordinates engine/surface readiness.
+    // PlayerViewModel delegates playback requests directly to MpvEngine instead of implementing
+    // a second pending-file queue.
+    // Threading contract: Engine lifecycle, playback, and surface operations must execute on
+    // the same designated thread (currently the Android main thread / viewModelScope).
     val engine: MpvEngine = MpvEngine(appContext, eventHandler)
 
     val trackState: StateFlow<TrackState> = eventHandler.trackState
@@ -239,6 +244,7 @@ class PlayerViewModel(
         initEngine()
     }
 
+    // Initializes MpvEngine on viewModelScope (Android main thread), fulfilling the single-thread contract.
     private fun initEngine() {
         scope.launch {
             try {
@@ -264,6 +270,13 @@ class PlayerViewModel(
         }
     }
 
+    /**
+     * Sets file info and delegates playback directly to [MpvEngine.playFile].
+     *
+     * MpvEngine owns pending-file handling if the engine is not yet Ready or the surface is not yet
+     * Attached; PlayerViewModel delegates directly rather than maintaining a second queue.
+     * Must be called on the designated main thread.
+     */
     // FIX #7: Handle failure in UriUtils resolution without updating state or calling engine
     fun loadFile(path: String, displayName: String? = null) {
         val name = try {

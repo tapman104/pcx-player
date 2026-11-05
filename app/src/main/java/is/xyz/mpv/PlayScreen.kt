@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -76,6 +77,8 @@ fun PlayScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var activeDialog by remember { mutableStateOf(TrackDialogType.NONE) }
     var indicator by remember { mutableStateOf<GestureIndicator?>(null) }
+    var seekStartSec by remember { mutableStateOf(0.0) }
+    var seekAccumulatedDelta by remember { mutableStateOf(0.0) }
     val coroutineScope = rememberCoroutineScope()
     var hideJob by remember { mutableStateOf<Job?>(null) }
     var topBarHeight by remember { mutableStateOf(0.dp) }
@@ -153,23 +156,15 @@ fun PlayScreen(
                             if (controlsVisible) resetHideTimer()
                         }
                     },
+                    onSeekGestureStart = {
+                        seekStartSec = viewModel.playbackProgress.value.positionSec
+                        seekAccumulatedDelta = 0.0
+                    },
                     onSeekBy = { delta, source ->
-                        val previousSeek = indicator as? GestureIndicator.Seek
-                        val currentPosition = viewModel.playbackProgress.value.positionSec
-                        val duration = viewModel.playbackProgress.value.durationSec
-
-                        val startPosition = previousSeek?.let {
-                            it.targetPositionSec - it.deltaSec
-                        } ?: currentPosition
-
-                        val previousTarget = previousSeek?.targetPositionSec
-                            ?: currentPosition
-
-                        val target = (previousTarget + delta)
-                            .coerceIn(0.0, duration)
-
+                        seekAccumulatedDelta += delta
+                        val target = (seekStartSec + seekAccumulatedDelta).coerceIn(0.0, viewModel.playbackProgress.value.durationSec)
                         indicator = GestureIndicator.Seek(
-                            deltaSec = target - startPosition,
+                            deltaSec = target - seekStartSec,
                             targetPositionSec = target,
                             source = source
                         )
@@ -317,19 +312,15 @@ fun PlayScreen(
         }
 
         // Overlay: Gesture indicators
+        val (indicatorAlignment, indicatorPadding) = when (indicator) {
+            is GestureIndicator.Brightness -> Alignment.CenterEnd to PaddingValues(end = 24.dp)
+            is GestureIndicator.Volume -> Alignment.CenterStart to PaddingValues(start = 24.dp)
+            else -> Alignment.Center to PaddingValues(0.dp)
+        }
         GestureIndicatorOverlay(
-            indicator = indicator.takeIf { it is GestureIndicator.Brightness },
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp)
+            indicator = indicator,
+            modifier = Modifier.align(indicatorAlignment).padding(indicatorPadding)
         )
-        GestureIndicatorOverlay(
-            indicator = indicator.takeIf { it is GestureIndicator.Volume },
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = 24.dp)
-        )
-        GestureIndicatorOverlay(
-            indicator = indicator.takeIf { it !is GestureIndicator.Brightness && it !is GestureIndicator.Volume },
-            modifier = Modifier.align(Alignment.Center)
-        )
-
         AudioTrackSheet(
             visible = activeDialog == TrackDialogType.AUDIO,
             tracks = uiState.trackState.audioTracks,
