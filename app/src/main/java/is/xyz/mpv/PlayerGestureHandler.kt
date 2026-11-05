@@ -18,6 +18,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import `is`.xyz.mpv.ui.SeekSource
@@ -54,6 +55,7 @@ fun Modifier.playerGestureHandler(
     getCurrentSpeed: (() -> Float)? = null,
     onVolumeChange: ((level: Int, max: Int) -> Unit)? = null,
     onBrightnessChange: ((level: Float) -> Unit)? = null,
+    isLongPressActive: MutableState<Boolean>? = null,
 ): Modifier {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -69,6 +71,7 @@ fun Modifier.playerGestureHandler(
     val currentGetCurrentSpeed = rememberUpdatedState(getCurrentSpeed)
     val currentOnVolumeChange = rememberUpdatedState(onVolumeChange)
     val currentOnBrightnessChange = rememberUpdatedState(onBrightnessChange)
+    val currentIsLongPressActive = rememberUpdatedState(isLongPressActive)
 
     val flags = remember { GestureFlags() }
 
@@ -94,17 +97,20 @@ fun Modifier.playerGestureHandler(
                 onLongPress = {
                     if (flags.gestureClaimed) return@detectTapGestures
                     flags.longPressActive = true
+                    currentIsLongPressActive.value?.value = true
                     currentOnSpeedChange.value(2f)
                 },
                 onPress = {
                     try {
                         flags.longPressActive = false
+                        currentIsLongPressActive.value?.value = false
                         speedBeforeLongPress = currentGetCurrentSpeed.value?.invoke() ?: 1f
                         tryAwaitRelease()
                     } finally {
                         if (flags.longPressActive) {
-                            currentOnSpeedChange.value(speedBeforeLongPress)
                             flags.longPressActive = false
+                            currentIsLongPressActive.value?.value = false
+                            currentOnSpeedChange.value(speedBeforeLongPress)
                         }
                     }
                 }
@@ -139,7 +145,7 @@ fun Modifier.playerGestureHandler(
                     // A two-finger gesture takes priority over one-finger movement.
                     if (pressedCount >= 2) {
                         mode = GestureMode.PINCH
-                        if (zoom.isFinite() && zoom > 0f && abs(zoom - 1f) > 0.01f) {
+                        if (zoom.isFinite() && zoom > 0f && abs(zoom - 1f) > 0.002f) {
                             currentOnZoomBy.value(zoom)
                         }
                         event.changes.forEach { if (it.positionChanged()) it.consume() }

@@ -23,12 +23,17 @@ import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 
 enum class SeekSource {
     DOUBLE_TAP,
@@ -52,22 +57,31 @@ fun GestureIndicatorOverlay(
     indicator: GestureIndicator?,
     modifier: Modifier = Modifier,
 ) {
+    var lastIndicator by remember { mutableStateOf<GestureIndicator?>(null) }
+    if (indicator != null) {
+        lastIndicator = indicator
+    }
+
     AnimatedVisibility(
         visible = indicator != null,
         enter = fadeIn(),
         exit = fadeOut(),
         modifier = modifier,
     ) {
-        if (indicator == null) return@AnimatedVisibility
+        val current = indicator ?: lastIndicator ?: return@AnimatedVisibility
 
-        if (indicator is GestureIndicator.Seek) {
-            when (indicator.source) {
+        if (current is GestureIndicator.Seek) {
+            when (current.source) {
                 SeekSource.DOUBLE_TAP -> {
-                    val icon = if (indicator.deltaSec >= 0) {
+                    val icon = if (current.deltaSec >= 0) {
                         Icons.Filled.FastForward
                     } else {
                         Icons.Filled.FastRewind
                     }
+                    val sign = if (current.deltaSec < 0) "-" else "+"
+                    val seconds = abs(current.deltaSec).toLong()
+                    val text = "$sign${seconds}s"
+
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -75,14 +89,14 @@ fun GestureIndicatorOverlay(
                             imageVector = icon,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(38.dp)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = TimeFormatter.formatDelta(indicator.deltaSec),
+                            text = text,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 22.sp
+                            fontSize = 24.sp
                         )
                     }
                 }
@@ -91,13 +105,13 @@ fun GestureIndicatorOverlay(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = TimeFormatter.formatDelta(indicator.deltaSec),
+                            text = TimeFormatter.formatDelta(current.deltaSec),
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp
                         )
                         Text(
-                            text = "[${TimeFormatter.formatTime(indicator.targetPositionSec)}]",
+                            text = "[${TimeFormatter.formatTime(current.targetPositionSec)}]",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp
@@ -108,18 +122,18 @@ fun GestureIndicatorOverlay(
             return@AnimatedVisibility
         }
 
-        val (icon, text) = when (indicator) {
+        val (icon, text) = when (current) {
             is GestureIndicator.Volume -> {
-                Icons.Filled.VolumeUp to "Volume ${indicator.level}/${indicator.max}"
+                Icons.Filled.VolumeUp to "Volume ${current.level}/${current.max}"
             }
             is GestureIndicator.Brightness -> {
-                Icons.Filled.BrightnessHigh to "Brightness ${(indicator.level * 100).toInt()}%"
+                Icons.Filled.BrightnessHigh to "Brightness ${(current.level * 100).toInt()}%"
             }
             is GestureIndicator.Speed -> {
-                Icons.Filled.Speed to "${indicator.multiplier}x"
+                Icons.Filled.Speed to "${current.multiplier}x"
             }
             is GestureIndicator.Zoom -> {
-                Icons.Filled.ZoomIn to "${(indicator.level * 100).toInt()}%"
+                Icons.Filled.ZoomIn to "${(current.level * 100).toInt()}%"
             }
             is GestureIndicator.Seek -> return@AnimatedVisibility
         }

@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -68,6 +69,7 @@ fun PlayScreen(
     )
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val orientationState by viewModel.orientationState.collectAsState()
     val currentZoom by viewModel.currentZoom.collectAsState()
     val subFontSize by viewModel.subFontSize.collectAsState()
     val subPos by viewModel.subPos.collectAsState()
@@ -77,6 +79,9 @@ fun PlayScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var activeDialog by remember { mutableStateOf(TrackDialogType.NONE) }
     var indicator by remember { mutableStateOf<GestureIndicator?>(null) }
+    var indicatorRevision by remember { mutableStateOf(0) }
+    val isLongPressActive = remember { mutableStateOf(false) }
+    var doubleTapAccumulatedDelta by remember { mutableStateOf(0.0) }
     var seekStartSec by remember { mutableStateOf(0.0) }
     var seekAccumulatedDelta by remember { mutableStateOf(0.0) }
     val coroutineScope = rememberCoroutineScope()
@@ -93,12 +98,23 @@ fun PlayScreen(
         }
     }
 
-    LaunchedEffect(indicator) {
+    LaunchedEffect(indicatorRevision, isLongPressActive.value) {
         if (indicator != null) {
             hideJob?.cancel()
             controlsVisible = false
-            delay(600)
-            indicator = null
+            if (isLongPressActive.value) {
+                return@LaunchedEffect
+            }
+            val timeoutMs = if (indicator is GestureIndicator.Seek && (indicator as GestureIndicator.Seek).source == SeekSource.DOUBLE_TAP) {
+                700L
+            } else {
+                600L
+            }
+            delay(timeoutMs)
+            if (!isLongPressActive.value) {
+                indicator = null
+                doubleTapAccumulatedDelta = 0.0
+            }
         }
     }
 
@@ -133,7 +149,7 @@ fun PlayScreen(
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
@@ -150,6 +166,7 @@ fun PlayScreen(
                 .fillMaxSize()
                 .padding(top = topBarHeight, bottom = bottomBarHeight)
                 .playerGestureHandler(
+                    isLongPressActive = isLongPressActive,
                     onSingleTap = {
                         if (activeDialog == TrackDialogType.NONE) {
                             controlsVisible = !controlsVisible
@@ -157,27 +174,63 @@ fun PlayScreen(
                         }
                     },
                     onSeekGestureStart = {
+                        doubleTapAccumulatedDelta = 0.0
                         seekStartSec = viewModel.playbackProgress.value.positionSec
                         seekAccumulatedDelta = 0.0
                     },
                     onSeekBy = { delta, source ->
-                        seekAccumulatedDelta += delta
-                        val target = (seekStartSec + seekAccumulatedDelta).coerceIn(0.0, viewModel.playbackProgress.value.durationSec)
-                        indicator = GestureIndicator.Seek(
-                            deltaSec = target - seekStartSec,
-                            targetPositionSec = target,
-                            source = source
-                        )
+                        when (source) {
+                            SeekSource.DOUBLE_TAP -> {
+                                val isCurrentDoubleTap = indicator is GestureIndicator.Seek &&
+                                    (indicator as GestureIndicator.Seek).source == SeekSource.DOUBLE_TAP
+                                val isSameDirection = isCurrentDoubleTap && (
+                                    (delta > 0 && doubleTapAccumulatedDelta > 0) ||
+                                    (delta < 0 && doubleTapAccumulatedDelta < 0)
+                                )
 
-                        viewModel.seekBy(delta)
+                                if (isSameDirection) {
+                                    doubleTapAccumulatedDelta += delta
+                                } else {
+                                    doubleTapAccumulatedDelta = delta
+                                }
+
+                                val currentPos = viewModel.playbackProgress.value.positionSec
+                                val target = (currentPos + delta).coerceIn(0.0, viewModel.playbackProgress.value.durationSec)
+                                indicator = GestureIndicator.Seek(
+                                    deltaSec = doubleTapAccumulatedDelta,
+                                    targetPositionSec = target,
+                                    source = SeekSource.DOUBLE_TAP
+                                )
+                                indicatorRevision++
+                                viewModel.seekBy(delta)
+                            }
+                            SeekSource.SWIPE -> {
+                                doubleTapAccumulatedDelta = 0.0
+                                seekAccumulatedDelta += delta
+                                val target = (seekStartSec + seekAccumulatedDelta).coerceIn(0.0, viewModel.playbackProgress.value.durationSec)
+                                indicator = GestureIndicator.Seek(
+                                    deltaSec = target - seekStartSec,
+                                    targetPositionSec = target,
+                                    source = SeekSource.SWIPE
+                                )
+                                indicatorRevision++
+                                viewModel.seekBy(delta)
+                            }
+                        }
                     },
                     onSpeedChange = {
+                        doubleTapAccumulatedDelta = 0.0
                         viewModel.setSpeed(it.toDouble())
-                        indicator = GestureIndicator.Speed(it)
+                        if (isLongPressActive.value) {
+                            indicator = GestureIndicator.Speed(it)
+                            indicatorRevision++
+                        }
                     },
                     onZoomBy = {
+                        doubleTapAccumulatedDelta = 0.0
                         viewModel.zoomBy(it)
                         indicator = GestureIndicator.Zoom(viewModel.currentZoom.value)
+                        indicatorRevision++
                     },
                     onDoubleTap = {
                         controlsVisible = !controlsVisible
@@ -185,10 +238,14 @@ fun PlayScreen(
                     },
                     getCurrentSpeed = { viewModel.getCurrentSpeed() },
                     onVolumeChange = { level, max ->
+                        doubleTapAccumulatedDelta = 0.0
                         indicator = GestureIndicator.Volume(level, max)
+                        indicatorRevision++
                     },
                     onBrightnessChange = { level ->
+                        doubleTapAccumulatedDelta = 0.0
                         indicator = GestureIndicator.Brightness(level)
+                        indicatorRevision++
                     },
                 )
         )
@@ -312,9 +369,49 @@ fun PlayScreen(
         }
 
         // Overlay: Gesture indicators
-        val (indicatorAlignment, indicatorPadding) = when (indicator) {
+        // Calculate the actual rendered video content rectangle to account for letterboxing / pillarboxing.
+        // We obtain the video's intrinsic dimensions and rotation from viewModel.orientationState
+        // (sourced directly from mpv's reported width, height, and video-rotate properties)
+        // and container dimensions from BoxWithConstraints (maxWidth, maxHeight).
+        val rotation = ((orientationState.videoRotationDegrees % 360) + 360) % 360
+        val isSwapped = rotation == 90 || rotation == 270
+        val effectiveVideoWidth = if (isSwapped) orientationState.videoHeight else orientationState.videoWidth
+        val effectiveVideoHeight = if (isSwapped) orientationState.videoWidth else orientationState.videoHeight
+
+        val containerWidth = maxWidth
+        val containerHeight = maxHeight
+        val (visibleVideoWidth, pillarboxPadding) = if (effectiveVideoWidth > 0 && effectiveVideoHeight > 0 && containerHeight.value > 0f) {
+            val videoAspect = effectiveVideoWidth.toFloat() / effectiveVideoHeight.toFloat()
+            val containerAspect = containerWidth.value / containerHeight.value
+            if (containerAspect > videoAspect) {
+                // Container is wider than the video: pillarboxed with black bars on left and right.
+                val visibleW = containerHeight * videoAspect
+                val pillarbox = (containerWidth - visibleW) / 2f
+                visibleW to pillarbox
+            } else {
+                // Container is taller than (or equal to) the video: letterboxed with black bars on top and bottom.
+                // Horizontally, the video spans the full container width.
+                containerWidth to 0.dp
+            }
+        } else {
+            containerWidth to 0.dp
+        }
+        val doubleTapSidePadding = pillarboxPadding + (visibleVideoWidth * 0.11f)
+
+        val (indicatorAlignment, indicatorPadding) = when (val ind = indicator) {
             is GestureIndicator.Brightness -> Alignment.CenterEnd to PaddingValues(end = 24.dp)
             is GestureIndicator.Volume -> Alignment.CenterStart to PaddingValues(start = 24.dp)
+            is GestureIndicator.Seek -> {
+                if (ind.source == SeekSource.DOUBLE_TAP) {
+                    if (ind.deltaSec < 0) {
+                        Alignment.CenterStart to PaddingValues(start = doubleTapSidePadding)
+                    } else {
+                        Alignment.CenterEnd to PaddingValues(end = doubleTapSidePadding)
+                    }
+                } else {
+                    Alignment.Center to PaddingValues(0.dp)
+                }
+            }
             else -> Alignment.Center to PaddingValues(0.dp)
         }
         GestureIndicatorOverlay(
