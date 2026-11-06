@@ -123,15 +123,16 @@ class PlayerActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.orientationState.collect { state ->
+                    val effectiveMode = state.manualOverride ?: state.mode
                     val input = OrientationInput(
-                        mode = state.mode,
+                        mode = effectiveMode,
                         videoWidth = state.videoWidth,
                         videoHeight = state.videoHeight,
                         videoRotationDegrees = state.videoRotationDegrees,
                     )
                     when (val result = orientationController.resolve(input)) {
                         is OrientationResult.FollowSystem -> {
-                            Log.i(TAG, "Orientation resolved: FollowSystem (mode=${state.mode}, dims=${state.videoWidth}x${state.videoHeight})")
+                            Log.i(TAG, "Orientation resolved: FollowSystem (mode=${effectiveMode}, dims=${state.videoWidth}x${state.videoHeight})")
                             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                         }
                         is OrientationResult.Locked -> {
@@ -140,7 +141,7 @@ class PlayerActivity : ComponentActivity() {
                                 ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> "LANDSCAPE"
                                 else -> result.androidOrientation.toString()
                             }
-                            Log.i(TAG, "Orientation resolved: Locked($name) (mode=${state.mode}, dims=${state.videoWidth}x${state.videoHeight})")
+                            Log.i(TAG, "Orientation resolved: Locked($name) (mode=${effectiveMode}, dims=${state.videoWidth}x${state.videoHeight})")
                             requestedOrientation = result.androidOrientation
                         }
                     }

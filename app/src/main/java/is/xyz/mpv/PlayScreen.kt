@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -74,6 +75,7 @@ fun PlayScreen(
     val subFontSize by viewModel.subFontSize.collectAsState()
     val subPos by viewModel.subPos.collectAsState()
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
 
     var controlsVisible by remember { mutableStateOf(true) }
@@ -364,6 +366,10 @@ fun PlayScreen(
                 onSeekStarted = {
                     hideJob?.cancel()
                 },
+                onRotateClick = {
+                    viewModel.toggleOrientationOverride { configuration.orientation }
+                    resetHideTimer()
+                },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -467,6 +473,7 @@ private fun PlayerBottomBarHost(
     isEnabled: Boolean,
     onSeek: (Double) -> Unit,
     onSeekStarted: (() -> Unit)? = null,
+    onRotateClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val progress by playbackProgressFlow.collectAsState()
@@ -476,6 +483,7 @@ private fun PlayerBottomBarHost(
         durationSec = progress.durationSec,
         onSeek = onSeek,
         onSeekStarted = onSeekStarted,
+        onRotateClick = onRotateClick,
         modifier = modifier
     )
 }

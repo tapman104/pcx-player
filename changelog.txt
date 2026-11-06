@@ -400,3 +400,7 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 - Add observable long-press state for indicator lifecycle
 - Improve pinch zoom responsiveness with a smaller deadzone
 - Refine double-tap seek indicator positioning and feedback
+
+06.11.2026
+
+*feat: add temporary rotation override with toggle refinement 

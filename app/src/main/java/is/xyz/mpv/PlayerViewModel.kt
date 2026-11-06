@@ -41,6 +41,7 @@ data class OrientationState(
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
     val videoRotationDegrees: Int = 0,
+    val manualOverride: OrientationMode? = null,
 )
 
 private data class SubAndLangPrefs(
@@ -137,6 +138,7 @@ class PlayerViewModel(
     val currentZoom: StateFlow<Float> = _currentZoom.asStateFlow()
 
     private val _videoGeometry = MutableStateFlow(VideoGeometry())
+    private val _orientationOverride = MutableStateFlow<OrientationMode?>(null)
 
     /**
      * Combined state for PlayerActivity's orientation collector.
@@ -146,12 +148,14 @@ class PlayerViewModel(
     val orientationState: StateFlow<OrientationState> = combine(
         preferencesRepository.orientationMode,
         _videoGeometry,
-    ) { mode, geometry ->
+        _orientationOverride,
+    ) { mode, geometry, override ->
         OrientationState(
             mode = mode,
             videoWidth = geometry.width,
             videoHeight = geometry.height,
             videoRotationDegrees = geometry.rotationDegrees,
+            manualOverride = override,
         )
     }.stateIn(
         scope = scope,
@@ -290,6 +294,7 @@ class PlayerViewModel(
         _playbackProgress.value = PlaybackProgress()
         _playbackSpeed.value = 1f
         _currentZoom.value = 1f
+        _orientationOverride.value = null
         // FIX #5: Set isLoadingNewFile true before calling engine.playFile
         _isLoadingNewFile.value = true
         engine.playFile(path)
@@ -368,6 +373,22 @@ class PlayerViewModel(
         scope.launch {
             preferencesRepository.setOrientationMode(mode)
         }
+    }
+
+    fun toggleOrientationOverride(currentConfigOrientation: () -> Int) {
+        if (_orientationOverride.value != null) {
+            _orientationOverride.value = null
+            return
+        }
+
+        _orientationOverride.value =
+            if (currentConfigOrientation() ==
+                android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            ) {
+                OrientationMode.PORTRAIT
+            } else {
+                OrientationMode.LANDSCAPE
+            }
     }
 
     // -- Lifecycle -----------------------------------------------------------
