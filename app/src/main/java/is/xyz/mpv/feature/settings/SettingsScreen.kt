@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Info
@@ -53,6 +54,7 @@ sealed interface SettingsRoute {
     data object Video : SettingsRoute
     data object Subtitles : SettingsRoute
     data object Decoder : SettingsRoute
+    data object AppLogViewer : SettingsRoute
     data object About : SettingsRoute
 }
 
@@ -101,6 +103,11 @@ fun SettingsScreen(
         SettingsRoute.Decoder -> {
             DecoderSettingsScreen(
                 preferencesRepository = preferencesRepository,
+                onBackClick = { currentRoute = SettingsRoute.Hub }
+            )
+        }
+        SettingsRoute.AppLogViewer -> {
+            AppLogViewerScreen(
                 onBackClick = { currentRoute = SettingsRoute.Hub }
             )
         }
@@ -165,6 +172,11 @@ private fun SettingsHubContent(
                 onClick = { onNavigate(SettingsRoute.Decoder) }
             )
             CategoryRow(
+                icon = Icons.AutoMirrored.Filled.Article,
+                title = "App Logs",
+                onClick = { onNavigate(SettingsRoute.AppLogViewer) }
+            )
+            CategoryRow(
                 icon = Icons.Filled.Info,
                 title = "About",
                 onClick = { onNavigate(SettingsRoute.About) }
@@ -182,6 +194,7 @@ private fun CategoryRow(
         "Video" -> Icons.Filled.PlayArrow
         "Subtitles" -> Icons.Filled.ClosedCaption
         "Decoder" -> Icons.Filled.Memory
+        "App Logs" -> Icons.AutoMirrored.Filled.Article
         "About" -> Icons.Filled.Info
         else -> Icons.Filled.Info
     },

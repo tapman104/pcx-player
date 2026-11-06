@@ -106,9 +106,15 @@ object MPVLib {
     val registeredObservers: List<EventObserver>
         get() = synchronized(observers) { observers.toList() }
 
+    val registeredLogObservers: List<LogObserver>
+        get() = synchronized(log_observers) { log_observers.toList() }
+
     fun clearObservers() {
         synchronized(observers) {
             observers.clear()
+        }
+        synchronized(log_observers) {
+            log_observers.clear()
         }
         synchronized(observedProperties) {
             observedProperties.clear()

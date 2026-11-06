@@ -54,6 +54,7 @@ class PlayerViewModelTest {
     @Before
     fun setUp() = runBlocking {
         MPVLib.clearObservers()
+        AppLogger.clear()
         val context = createTestContext()
         val repo = UserPreferencesRepository(context)
         repo.setPreferredAudioLang(null)
@@ -264,6 +265,132 @@ class PlayerViewModelTest {
         repo.setPreferredSubtitleLang(null)
         assertNull(repo.preferredAudioLang.first())
         assertNull(repo.preferredSubtitleLang.first())
+    }
+
+    @Test
+    fun testMpvLogForwardingAndLevelMapping() {
+        val context = createTestContext()
+        val testScope = CoroutineScope(Dispatchers.Unconfined)
+        val viewModel = PlayerViewModel(context, coroutineScope = testScope)
+
+        AppLogger.clear()
+
+        // 1. FATAL / ERROR -> ERROR
+        MPVLib.logMessage("demux", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_FATAL, "Fatal error")
+        MPVLib.logMessage("ffmpeg", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR, "Codec error")
+
+        // 2. WARN -> WARN
+        MPVLib.logMessage("cplayer", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN, "Drop frame")
+
+        // 3. INFO -> INFO
+        MPVLib.logMessage("vo", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_INFO, "Surface ready")
+
+        // 4. V / DEBUG / TRACE -> filtered out (not stored)
+        MPVLib.logMessage("cplayer", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_V, "Verbose details")
+        MPVLib.logMessage("ao", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_DEBUG, "Buffer stats")
+        MPVLib.logMessage("core", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_TRACE, "Trace step")
+
+        val logs = AppLogger.getLogs()
+        assertEquals(4, logs.size)
+
+        assertEquals(LogSeverity.ERROR, logs[0].severity)
+        assertEquals("mpv:demux", logs[0].tag)
+        assertEquals("Fatal error", logs[0].message)
+
+        assertEquals(LogSeverity.ERROR, logs[1].severity)
+        assertEquals("mpv:ffmpeg", logs[1].tag)
+
+        assertEquals(LogSeverity.WARN, logs[2].severity)
+        assertEquals("mpv:cplayer", logs[2].tag)
+
+        assertEquals(LogSeverity.INFO, logs[3].severity)
+        assertEquals("mpv:vo", logs[3].tag)
+
+        assertTrue(logs.none { it.severity == LogSeverity.DEBUG })
+    }
+
+    @Test
+    fun testApplicationLogsDoNotExposeFullPath() {
+        val context = createTestContext()
+        val testScope = CoroutineScope(Dispatchers.Unconfined)
+        val viewModel = PlayerViewModel(context, coroutineScope = testScope)
+
+        AppLogger.clear()
+        viewModel.loadFile("/storage/emulated/0/Movies/sample_secret_movie.mkv", "sample_secret_movie.mkv")
+
+        val logs = AppLogger.getLogs()
+        val loadEntry = logs.firstOrNull { it.message.contains("Loading file:") }
+        assertTrue(loadEntry != null)
+        assertEquals("Loading file: sample_secret_movie.mkv", loadEntry?.message)
+        assertFalse(loadEntry?.message?.contains("/storage/emulated") ?: true)
+    }
+
+    @Test
+    fun testBufferCapacityEnforcedAndOldestDropped() {
+        AppLogger.clear()
+
+        for (i in 1..1050) {
+            AppLogger.i("TestTag", "Log message $i")
+        }
+
+        val logs = AppLogger.getLogs()
+        assertEquals(1000, logs.size)
+        assertEquals("Log message 51", logs.first().message)
+        assertEquals("Log message 1050", logs.last().message)
+    }
+
+    @Test
+    fun testMultithreadedLoggingSafety() {
+        AppLogger.clear()
+        val threads = mutableListOf<Thread>()
+        val threadCount = 8
+        val logsPerThread = 150
+
+        for (t in 1..threadCount) {
+            val thread = Thread {
+                for (i in 1..logsPerThread) {
+                    AppLogger.d("Thread-$t", "Message $i")
+                }
+            }
+            threads.add(thread)
+            thread.start()
+        }
+
+        threads.forEach { it.join() }
+
+        val logs = AppLogger.getLogs()
+        assertEquals(1000, logs.size)
+    }
+
+    @Test
+    fun testExportFormattingAndClear() {
+        AppLogger.clear()
+        AppLogger.i("PlayerViewModel", "Engine ready")
+        AppLogger.w("Mpv", "Frame drop warning")
+
+        val exportText = AppLogger.formatLogsForExport()
+        assertTrue(exportText.contains("[INFO] [PlayerViewModel] Engine ready"))
+        assertTrue(exportText.contains("[WARN] [Mpv] Frame drop warning"))
+
+        AppLogger.clear()
+        assertTrue(AppLogger.getLogs().isEmpty())
+        assertTrue(AppLogger.formatLogsForExport().isEmpty())
+    }
+
+    @Test
+    fun testObserverRemovedOnTeardown() {
+        val context = createTestContext()
+        val testScope = CoroutineScope(Dispatchers.Unconfined)
+        val viewModel = PlayerViewModel(context, coroutineScope = testScope)
+
+        assertEquals(1, MPVLib.registeredLogObservers.size)
+
+        val onClearedMethod = PlayerViewModel::class.java.getDeclaredMethod("onCleared").apply {
+            isAccessible = true
+        }
+        onClearedMethod.invoke(viewModel)
+
+        assertEquals(0, MPVLib.registeredLogObservers.size)
     }
 
     companion object {

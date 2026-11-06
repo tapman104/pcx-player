@@ -125,6 +125,7 @@ class PlayerViewModel(
             if (BuildConfig.DEBUG) {
                 Log.i("mpv-native", "[$prefix] $text".trimEnd())
             }
+            AppLogger.logMpv(prefix, level, text)
         }
     }
 
@@ -173,6 +174,7 @@ class PlayerViewModel(
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
+        AppLogger.i(TAG, "PlayerViewModel initialized")
         MPVLib.addLogObserver(logObserver)
         scope.launch {
             eventHandler.videoGeometry.collect { geometry ->
@@ -257,8 +259,10 @@ class PlayerViewModel(
                     cacheDir  = appContext.cacheDir.path,
                 )
                 Log.i(TAG, "Engine init success")
+                AppLogger.i(TAG, "Engine init success")
             } catch (e: Exception) {
                 Log.e(TAG, "Engine init failed", e)
+                AppLogger.e(TAG, "Engine init failed: ${e.message}", e)
             }
         }
     }
@@ -269,8 +273,9 @@ class PlayerViewModel(
             val displayName = UriUtils.getDisplayName(appContext, uri)
             val playablePath = UriUtils.resolvePlayablePath(appContext, uri)
             loadFile(playablePath, displayName)
-        } catch (e: Throwable) {
+        } catch (e: Exception) {
             Log.e(TAG, "Failed to resolve uri: $uri", e)
+            AppLogger.e(TAG, "Failed to resolve media URI", e)
         }
     }
 
@@ -285,11 +290,13 @@ class PlayerViewModel(
     fun loadFile(path: String, displayName: String? = null) {
         val name = try {
             displayName ?: UriUtils.getDisplayNameFromPath(path)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to resolve display name for path: $path", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to resolve display name", e)
+            AppLogger.e(TAG, "Failed to resolve media display name", e)
             return
         }
-        Log.i(TAG, "loadFile: path=$path, name=$name")
+        Log.i(TAG, "loadFile: name=$name")
+        AppLogger.i(TAG, "Loading file: $name")
         _explicitFileName.value = name
         _playbackProgress.value = PlaybackProgress()
         _playbackSpeed.value = 1f
@@ -395,6 +402,7 @@ class PlayerViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        AppLogger.i(TAG, "PlayerViewModel onCleared: destroying engine")
         MPVLib.removeLogObserver(logObserver)
         engine.destroy()
     }
