@@ -404,3 +404,4 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 06.11.2026
 
 *feat: add temporary rotation override with toggle refinement 
+* feat(settings): add in-app log viewer with asynchronous redacted logging
