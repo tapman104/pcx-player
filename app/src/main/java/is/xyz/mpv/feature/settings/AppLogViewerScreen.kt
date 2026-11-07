@@ -66,18 +66,24 @@ fun AppLogViewerScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var logs by remember { mutableStateOf(AppLogger.getLogs()) }
+    var previousLogs by remember { mutableStateOf<List<LogEntry>>(emptyList()) }
+    var memoryLogs by remember { mutableStateOf(AppLogger.getLogs()) }
+    val logs = remember(previousLogs, memoryLogs) { previousLogs + memoryLogs }
     var showClearDialog by remember { mutableStateOf(false) }
 
     // Polling runs only while AppLogViewerScreen is in composition.
     // When the user navigates back to SettingsHub or leaves the screen,
     // the coroutine launched by LaunchedEffect(Unit) is automatically cancelled.
     LaunchedEffect(Unit) {
+        val loadedPreviousLogs = withContext(Dispatchers.IO) {
+            AppLogger.loadPreviousSessionLogs()
+        }
+        previousLogs = loadedPreviousLogs
         while (true) {
             delay(500L)
             val latestLogs = AppLogger.getLogs()
-            if (latestLogs != logs) {
-                logs = latestLogs
+            if (latestLogs != memoryLogs) {
+                memoryLogs = latestLogs
             }
         }
     }
@@ -124,7 +130,8 @@ fun AppLogViewerScreen(
                         scope.launch(Dispatchers.IO) {
                             AppLogger.clear()
                             withContext(Dispatchers.Main) {
-                                logs = emptyList()
+                                previousLogs = emptyList()
+                                memoryLogs = emptyList()
                                 showClearDialog = false
                             }
                         }

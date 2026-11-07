@@ -7,6 +7,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -41,6 +42,8 @@ object AppLogger {
     private var logDir: File? = null
     private var logWriter: BufferedWriter? = null
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    @Volatile
+    internal var sessionStartTime = System.currentTimeMillis()
 
     private val diskExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "AppLogger-DiskWriter").apply {
@@ -68,6 +71,8 @@ object AppLogger {
     // 9. Email addresses
     private val EMAIL_REGEX = Regex("""\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b""")
 
+    private const val SESSION_START_PREFIX = "SESSION_START "
+
     fun init(context: Context) {
         val baseDir = context.applicationContext?.filesDir ?: context.filesDir
         initInternal(File(baseDir, "logs"))
@@ -81,7 +86,21 @@ object AppLogger {
                 }
             } catch (_: Exception) {}
             logDir = dir
+            sessionStartTime = System.currentTimeMillis()
+            entries.clear()
+            nextId = 0L
         }
+        try {
+            diskExecutor.submit {
+                try {
+                    logWriter?.close()
+                } catch (_: Exception) {}
+                logWriter = null
+            }.get()
+        } catch (_: Exception) {}
+
+        val sessionId = UUID.randomUUID().toString()
+        log(LogSeverity.DEBUG, "AppLogger", "SESSION_START $sessionId")
     }
 
     fun redact(message: String): String {
@@ -227,6 +246,7 @@ object AppLogger {
     fun clear() {
         synchronized(lock) {
             entries.clear()
+            sessionStartTime = System.currentTimeMillis()
         }
         try {
             diskExecutor.submit {
@@ -246,6 +266,115 @@ object AppLogger {
                 }
             }.get()
         } catch (_: Exception) {}
+    }
+
+    private val LOG_LINE_REGEX = Regex("""^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\] \[([A-Z]+)\] \[([^\]]*)\] (.*)$""")
+
+    internal fun parseLogLines(lines: List<String>): List<LogEntry> {
+        val result = mutableListOf<LogEntry>()
+        val parserDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+        var currentTimestamp = 0L
+        var currentSeverity = LogSeverity.INFO
+        var currentTag = ""
+        var currentMessage = StringBuilder()
+        var hasEntry = false
+
+        fun flushCurrent() {
+            if (hasEntry) {
+                result.add(
+                    LogEntry(
+                        id = 0L,
+                        timestamp = currentTimestamp,
+                        severity = currentSeverity,
+                        tag = currentTag,
+                        message = currentMessage.toString()
+                    )
+                )
+                currentMessage = StringBuilder()
+                hasEntry = false
+            }
+        }
+
+        for (line in lines) {
+            val match = LOG_LINE_REGEX.matchEntire(line)
+            if (match != null) {
+                flushCurrent()
+                val timeStr = match.groupValues[1]
+                val sevStr = match.groupValues[2]
+                val tagStr = match.groupValues[3]
+                val msgStr = match.groupValues[4]
+
+                val parsedTime = try {
+                    parserDateFormat.parse(timeStr)?.time ?: 0L
+                } catch (_: Exception) {
+                    0L
+                }
+                val parsedSeverity = try {
+                    LogSeverity.valueOf(sevStr)
+                } catch (_: Exception) {
+                    LogSeverity.INFO
+                }
+
+                currentTimestamp = parsedTime
+                currentSeverity = parsedSeverity
+                currentTag = tagStr
+                currentMessage.append(msgStr)
+                hasEntry = true
+            } else if (hasEntry) {
+                currentMessage.append('\n').append(line)
+            }
+        }
+        flushCurrent()
+        return result
+    }
+
+    fun loadPreviousSessionLogs(): List<LogEntry> {
+        val dir = logDir ?: return emptyList()
+        return try {
+            diskExecutor.submit(Callable {
+                try {
+                    logWriter?.flush()
+                    val oldFile = File(dir, OLD_LOG_FILE_NAME)
+                    val currentFile = File(dir, LOG_FILE_NAME)
+
+                    val lines = mutableListOf<String>()
+                    if (oldFile.exists()) {
+                        lines.addAll(oldFile.readLines())
+                    }
+                    if (currentFile.exists()) {
+                        lines.addAll(currentFile.readLines())
+                    }
+                    if (lines.isEmpty()) {
+                        return@Callable emptyList<LogEntry>()
+                    }
+
+                    val parsed = parseLogLines(lines)
+                    val currentSessionIndex = parsed.indexOfLast {
+                        it.message.startsWith(SESSION_START_PREFIX)
+                    }
+                    val previousEntries = if (currentSessionIndex >= 0) {
+                        parsed.subList(0, currentSessionIndex)
+                    } else {
+                        parsed
+                    }
+
+                    val limited = if (previousEntries.size > MAX_CAPACITY) {
+                        previousEntries.takeLast(MAX_CAPACITY)
+                    } else {
+                        previousEntries
+                    }
+
+                    val count = limited.size
+                    limited.mapIndexed { index, entry ->
+                        entry.copy(id = -(count - index).toLong())
+                    }
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }).get()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun flush() {

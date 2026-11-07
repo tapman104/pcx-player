@@ -222,4 +222,208 @@ class AppLoggerTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun testLoadPreviousSessionLogsFromDisk() {
+        val tempDir = Files.createTempDirectory("app_logger_prev_test").toFile()
+        try {
+            AppLogger.initInternal(tempDir)
+            AppLogger.i("PrevTag", "Session 1 message 1")
+            AppLogger.w("PrevTag", "Session 1 message 2")
+            AppLogger.flush()
+
+            // Simulate app restart / new session
+            AppLogger.clear()
+            // Re-create the disk log files to simulate previous run persisted on disk
+            val logFile = File(tempDir, "app.log")
+            logFile.writeText(
+                "[2026-11-06 10:00:00.000] [INFO] [PrevTag] Previous session log 1\n" +
+                "[2026-11-06 10:00:01.000] [WARN] [PrevTag] Previous session log 2\n"
+            )
+            AppLogger.initInternal(tempDir)
+
+            val previousLogs = AppLogger.loadPreviousSessionLogs()
+            assertEquals(2, previousLogs.size)
+            assertEquals("Previous session log 1", previousLogs[0].message)
+            assertEquals(LogSeverity.INFO, previousLogs[0].severity)
+            assertEquals("PrevTag", previousLogs[0].tag)
+            assertEquals(-2L, previousLogs[0].id)
+
+            assertEquals("Previous session log 2", previousLogs[1].message)
+            assertEquals(LogSeverity.WARN, previousLogs[1].severity)
+            assertEquals("PrevTag", previousLogs[1].tag)
+            assertEquals(-1L, previousLogs[1].id)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testLoadPreviousSessionLogsDeduplicationWithCurrentSession() {
+        val tempDir = Files.createTempDirectory("app_logger_dedup_test").toFile()
+        try {
+            val logFile = File(tempDir, "app.log")
+            tempDir.mkdirs()
+            logFile.writeText(
+                "[2026-11-06 10:00:00.000] [INFO] [PrevTag] Older log from prev session\n"
+            )
+            AppLogger.initInternal(tempDir)
+
+            // Current session logs
+            AppLogger.i("CurrentTag", "Current session log")
+            AppLogger.flush()
+
+            // Memory has SESSION_START and current session log
+            val currentLogs = AppLogger.getLogs()
+            assertEquals(2, currentLogs.size)
+            assertTrue(currentLogs[0].message.startsWith("SESSION_START "))
+            assertEquals("Current session log", currentLogs[1].message)
+
+            // Previous session logs should only contain the older log, not the current session log
+            val previousLogs = AppLogger.loadPreviousSessionLogs()
+            assertEquals(1, previousLogs.size)
+            assertEquals("Older log from prev session", previousLogs[0].message)
+            assertEquals(-1L, previousLogs[0].id)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testLoadPreviousSessionLogsCoincidentalDuplicateDoesNotDropSubsequentLogs() {
+        val tempDir = Files.createTempDirectory("app_logger_coincidental_test").toFile()
+        try {
+            tempDir.mkdirs()
+            val oldFile = File(tempDir, "app.log.old")
+            val currentFile = File(tempDir, "app.log")
+
+            // Simulate previous session with content appearing BEFORE and AFTER a coincidental duplicate.
+            // Even if the coincidental duplicate is early in app.log.old, nothing before the real session boundary
+            // must be dropped.
+            oldFile.writeText(
+                "[2026-11-05 10:00:00.000] [INFO] [SharedTag] Previous line before duplicate\n" +
+                "[2026-11-05 10:00:01.000] [INFO] [SharedTag] Coincidental duplicate line\n"
+            )
+            currentFile.writeText(
+                "[2026-11-06 09:00:00.000] [WARN] [SharedTag] Genuine previous session line after duplicate\n"
+            )
+
+            // Start current session
+            AppLogger.initInternal(tempDir)
+            // Current session logs the coincidental duplicate line again
+            AppLogger.i("SharedTag", "Coincidental duplicate line")
+            AppLogger.i("SharedTag", "Current session unique line")
+            AppLogger.flush()
+
+            val previousLogs = AppLogger.loadPreviousSessionLogs()
+            assertEquals(3, previousLogs.size)
+            assertEquals("Previous line before duplicate", previousLogs[0].message)
+            assertEquals(-3L, previousLogs[0].id)
+            assertEquals("Coincidental duplicate line", previousLogs[1].message)
+            assertEquals(-2L, previousLogs[1].id)
+            assertEquals("Genuine previous session line after duplicate", previousLogs[2].message)
+            assertEquals(-1L, previousLogs[2].id)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testLoadPreviousSessionLogsTwoConsecutiveAppStarts() {
+        val tempDir = Files.createTempDirectory("app_logger_consecutive_test").toFile()
+        try {
+            // First app start
+            AppLogger.initInternal(tempDir)
+            AppLogger.i("AppTag", "Identical message across sessions")
+            AppLogger.w("AppTag", "Session 1 distinct warning")
+            AppLogger.flush()
+
+            // Second app start in the same test
+            AppLogger.initInternal(tempDir)
+            AppLogger.i("AppTag", "Identical message across sessions")
+            AppLogger.i("AppTag", "Session 2 distinct info")
+            AppLogger.flush()
+
+            val previousLogs = AppLogger.loadPreviousSessionLogs()
+            // Previous session must contain Session 1's entries:
+            // 1. SESSION_START <session1Id>
+            // 2. Identical message across sessions
+            // 3. Session 1 distinct warning
+            assertEquals(3, previousLogs.size)
+            assertTrue("First entry must be session 1's SESSION_START", previousLogs[0].message.startsWith("SESSION_START "))
+            assertEquals(-3L, previousLogs[0].id)
+            assertEquals("Identical message across sessions", previousLogs[1].message)
+            assertEquals(-2L, previousLogs[1].id)
+            assertEquals("Session 1 distinct warning", previousLogs[2].message)
+            assertEquals(-1L, previousLogs[2].id)
+
+            // Current session logs in memory:
+            // 1. SESSION_START <session2Id>
+            // 2. Identical message across sessions
+            // 3. Session 2 distinct info
+            val currentLogs = AppLogger.getLogs()
+            assertEquals(3, currentLogs.size)
+            assertTrue("First current log must be session 2's SESSION_START", currentLogs[0].message.startsWith("SESSION_START "))
+            assertEquals(0L, currentLogs[0].id)
+            assertEquals("Identical message across sessions", currentLogs[1].message)
+            assertEquals(1L, currentLogs[1].id)
+            assertEquals("Session 2 distinct info", currentLogs[2].message)
+            assertEquals(2L, currentLogs[2].id)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testLoadPreviousSessionLogsIncludesOldRotatedFile() {
+        val tempDir = Files.createTempDirectory("app_logger_old_test").toFile()
+        try {
+            tempDir.mkdirs()
+            val oldFile = File(tempDir, "app.log.old")
+            val currentFile = File(tempDir, "app.log")
+
+            oldFile.writeText("[2026-11-05 08:00:00.000] [INFO] [OldTag] Old file log\n")
+            currentFile.writeText("[2026-11-06 09:00:00.000] [ERROR] [CurTag] Current file prev log\n")
+
+            AppLogger.initInternal(tempDir)
+
+            val previousLogs = AppLogger.loadPreviousSessionLogs()
+            assertEquals(2, previousLogs.size)
+            assertEquals("Old file log", previousLogs[0].message)
+            assertEquals(LogSeverity.INFO, previousLogs[0].severity)
+            assertEquals("OldTag", previousLogs[0].tag)
+            assertEquals(-2L, previousLogs[0].id)
+
+            assertEquals("Current file prev log", previousLogs[1].message)
+            assertEquals(LogSeverity.ERROR, previousLogs[1].severity)
+            assertEquals("CurTag", previousLogs[1].tag)
+            assertEquals(-1L, previousLogs[1].id)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testLoadPreviousSessionLogsMultiline() {
+        val tempDir = Files.createTempDirectory("app_logger_multiline_test").toFile()
+        try {
+            tempDir.mkdirs()
+            val currentFile = File(tempDir, "app.log")
+            currentFile.writeText(
+                "[2026-11-06 09:00:00.000] [ERROR] [CrashTag] Exception occurred\n" +
+                "java.lang.RuntimeException: Test crash\n" +
+                "\tat com.example.Test.run(Test.kt:10)\n"
+            )
+
+            AppLogger.initInternal(tempDir)
+
+            val previousLogs = AppLogger.loadPreviousSessionLogs()
+            assertEquals(1, previousLogs.size)
+            assertTrue(previousLogs[0].message.contains("Exception occurred"))
+            assertTrue(previousLogs[0].message.contains("java.lang.RuntimeException: Test crash"))
+            assertTrue(previousLogs[0].message.contains("at com.example.Test.run(Test.kt:10)"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }
