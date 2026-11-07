@@ -434,3 +434,8 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
   on file switch.
 - PlayerBottomBar/PlayScreen: wire Fit Screen button next to Rotate.
 
+**Date:   Sat Nov 7 15:27:14 2026 +0530
+
+    refactor(engine): remove redundant clearGeometry and clearProgress calls in playFile
+
+ *feat(player): add playback controls lock with slide-to-unlock

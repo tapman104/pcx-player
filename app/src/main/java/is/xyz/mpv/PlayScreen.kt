@@ -7,20 +7,28 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -42,9 +51,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import `is`.xyz.mpv.ui.AudioTrackSheet
 import `is`.xyz.mpv.ui.GestureIndicator
 import `is`.xyz.mpv.ui.GestureIndicatorOverlay
+import `is`.xyz.mpv.ui.MoreOptionsSheet
 import `is`.xyz.mpv.ui.PlayerBottomBar
 import `is`.xyz.mpv.ui.PlayerTopBar
 import `is`.xyz.mpv.ui.SeekSource
+import `is`.xyz.mpv.ui.SlideToUnlock
 import `is`.xyz.mpv.ui.SubtitleTrackSheet
 import `is`.xyz.mpv.ui.VideoSurface
 import kotlinx.coroutines.Job
@@ -55,7 +66,8 @@ import kotlinx.coroutines.launch
 private enum class TrackDialogType {
     NONE,
     AUDIO,
-    SUBTITLE
+    SUBTITLE,
+    MORE_OPTIONS
 }
 
 @Composable
@@ -78,6 +90,8 @@ fun PlayScreen(
     val configuration = LocalConfiguration.current
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
 
+    var isLocked by remember { mutableStateOf(false) }
+    var lockControlsVisible by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
     var activeDialog by remember { mutableStateOf(TrackDialogType.NONE) }
     var indicator by remember { mutableStateOf<GestureIndicator?>(null) }
@@ -93,6 +107,7 @@ fun PlayScreen(
     val density = LocalDensity.current
 
     fun resetHideTimer() {
+        if (isLocked) return
         hideJob?.cancel()
         hideJob = coroutineScope.launch {
             delay(5_000)
@@ -120,9 +135,10 @@ fun PlayScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible) {
-        onControlsVisibilityChanged?.invoke(controlsVisible)
-        if (!controlsVisible) {
+    LaunchedEffect(controlsVisible, isLocked) {
+        val effectiveControlsVisible = !isLocked && controlsVisible
+        onControlsVisibilityChanged?.invoke(effectiveControlsVisible)
+        if (!effectiveControlsVisible) {
             topBarHeight = 0.dp
             bottomBarHeight = 0.dp
         }
@@ -141,6 +157,9 @@ fun PlayScreen(
     BackHandler(enabled = activeDialog != TrackDialogType.NONE) {
         activeDialog = TrackDialogType.NONE
         resetHideTimer()
+    }
+
+    BackHandler(enabled = isLocked) {
     }
 
     val handleBack: () -> Unit = onBackClick ?: {
@@ -168,19 +187,24 @@ fun PlayScreen(
                 .fillMaxSize()
                 .padding(top = topBarHeight, bottom = bottomBarHeight)
                 .playerGestureHandler(
-                    isLongPressActive = isLongPressActive,
+                    isGestureLocked = isLocked,
+                    isLongPressActive = if (isLocked) null else isLongPressActive,
                     onSingleTap = {
-                        if (activeDialog == TrackDialogType.NONE) {
+                        if (isLocked) {
+                            lockControlsVisible = !lockControlsVisible
+                        } else if (activeDialog == TrackDialogType.NONE) {
                             controlsVisible = !controlsVisible
                             if (controlsVisible) resetHideTimer()
                         }
                     },
-                    onSeekGestureStart = {
-                        doubleTapAccumulatedDelta = 0.0
-                        seekStartSec = viewModel.playbackProgress.value.positionSec
-                        seekAccumulatedDelta = 0.0
+                    onSeekGestureStart = if (isLocked) { {} } else {
+                        {
+                            doubleTapAccumulatedDelta = 0.0
+                            seekStartSec = viewModel.playbackProgress.value.positionSec
+                            seekAccumulatedDelta = 0.0
+                        }
                     },
-                    onSeekBy = { delta, source ->
+                    onSeekBy = if (isLocked) { _, _ -> } else { delta, source ->
                         when (source) {
                             SeekSource.DOUBLE_TAP -> {
                                 val isCurrentDoubleTap = indicator is GestureIndicator.Seek &&
@@ -220,31 +244,37 @@ fun PlayScreen(
                             }
                         }
                     },
-                    onSpeedChange = {
-                        doubleTapAccumulatedDelta = 0.0
-                        viewModel.setSpeed(it.toDouble())
-                        if (isLongPressActive.value) {
-                            indicator = GestureIndicator.Speed(it)
+                    onSpeedChange = if (isLocked) { _ -> } else {
+                        {
+                            doubleTapAccumulatedDelta = 0.0
+                            viewModel.setSpeed(it.toDouble())
+                            if (isLongPressActive.value) {
+                                indicator = GestureIndicator.Speed(it)
+                                indicatorRevision++
+                            }
+                        }
+                    },
+                    onZoomBy = if (isLocked) { _ -> } else {
+                        {
+                            doubleTapAccumulatedDelta = 0.0
+                            viewModel.zoomBy(it)
+                            indicator = GestureIndicator.Zoom(videoZoomState.zoom)
                             indicatorRevision++
                         }
                     },
-                    onZoomBy = {
-                        doubleTapAccumulatedDelta = 0.0
-                        viewModel.zoomBy(it)
-                        indicator = GestureIndicator.Zoom(videoZoomState.zoom)
-                        indicatorRevision++
-                    },
-                    onDoubleTap = {
-                        controlsVisible = !controlsVisible
-                        if (controlsVisible) resetHideTimer()
+                    onDoubleTap = if (isLocked) { {} } else {
+                        {
+                            controlsVisible = !controlsVisible
+                            if (controlsVisible) resetHideTimer()
+                        }
                     },
                     getCurrentSpeed = { viewModel.getCurrentSpeed() },
-                    onVolumeChange = { level, max ->
+                    onVolumeChange = if (isLocked) null else { level, max ->
                         doubleTapAccumulatedDelta = 0.0
                         indicator = GestureIndicator.Volume(level, max)
                         indicatorRevision++
                     },
-                    onBrightnessChange = { level ->
+                    onBrightnessChange = if (isLocked) null else { level ->
                         doubleTapAccumulatedDelta = 0.0
                         indicator = GestureIndicator.Brightness(level)
                         indicatorRevision++
@@ -257,7 +287,7 @@ fun PlayScreen(
             modifier = Modifier.align(Alignment.Center)
         ) {
             AnimatedVisibility(
-                visible = controlsVisible,
+                visible = !isLocked && controlsVisible,
                 enter = fadeIn(),
                 exit = fadeOut()
             ) {
@@ -304,14 +334,14 @@ fun PlayScreen(
 
         // Overlay: Top app bar with back navigation and title
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = !isLocked && controlsVisible,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .onGloballyPositioned {
-                    if (controlsVisible) {
+                    if (!isLocked && controlsVisible) {
                         topBarHeight = with(density) { it.size.height.toDp() }
                     }
                 }
@@ -343,14 +373,14 @@ fun PlayScreen(
 
         // Overlay: Bottom app bar with seek bar
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = !isLocked && controlsVisible,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .onGloballyPositioned {
-                    if (controlsVisible) {
+                    if (!isLocked && controlsVisible) {
                         bottomBarHeight = with(density) { it.size.height.toDp() }
                     }
                 }
@@ -426,11 +456,11 @@ fun PlayScreen(
             else -> Alignment.Center to PaddingValues(0.dp)
         }
         GestureIndicatorOverlay(
-            indicator = indicator,
+            indicator = if (isLocked) null else indicator,
             modifier = Modifier.align(indicatorAlignment).padding(indicatorPadding)
         )
         AudioTrackSheet(
-            visible = activeDialog == TrackDialogType.AUDIO,
+            visible = !isLocked && activeDialog == TrackDialogType.AUDIO,
             tracks = uiState.trackState.audioTracks,
             selectedTrackId = uiState.trackState.selectedAudioId,
             onSelect = { trackId ->
@@ -445,7 +475,7 @@ fun PlayScreen(
         )
 
         SubtitleTrackSheet(
-            visible = activeDialog == TrackDialogType.SUBTITLE,
+            visible = !isLocked && activeDialog == TrackDialogType.SUBTITLE,
             tracks = uiState.trackState.subtitleTracks,
             selectedTrackId = uiState.trackState.selectedSubtitleId,
             onSelect = { trackId ->
@@ -464,6 +494,105 @@ fun PlayScreen(
             onPosChange = { viewModel.previewSubPos(it) },
             onPosCommit = { viewModel.commitSubPos(it) },
         )
+
+        MoreOptionsSheet(
+            visible = !isLocked && activeDialog == TrackDialogType.MORE_OPTIONS,
+            onDismiss = {
+                activeDialog = TrackDialogType.NONE
+                resetHideTimer()
+            },
+            isPopUpPlayerActive = false,
+            isRepeatModeActive = false,
+            onLockClick = {
+                isLocked = true
+                lockControlsVisible = false
+                controlsVisible = false
+                activeDialog = TrackDialogType.NONE
+                hideJob?.cancel()
+            },
+            onSleepTimerClick = {
+                // TODO: implement
+            },
+            onPlaybackSpeedClick = {
+                // TODO: implement
+            },
+            onJumpToTimeClick = {
+                // TODO: implement
+            },
+            onEqualizerClick = {
+                // TODO: implement
+            },
+            onPlayAsAudioClick = {
+                // TODO: implement
+            },
+            onPopUpPlayerClick = {
+                // TODO: implement
+            },
+            onRepeatModeClick = {
+                // TODO: implement
+            }
+        )
+
+        // Overlay: Locked indicator
+        AnimatedVisibility(
+            visible = isLocked,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 24.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = "Locked",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Locked",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // Overlay: SlideToUnlock
+        AnimatedVisibility(
+            visible = isLocked && lockControlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            ) {
+                SlideToUnlock(
+                    onUnlock = {
+                        isLocked = false
+                        lockControlsVisible = false
+                        controlsVisible = true
+                        resetHideTimer()
+                    },
+                    modifier = Modifier.width(220.dp)
+                )
+            }
+        }
     }
 }
 

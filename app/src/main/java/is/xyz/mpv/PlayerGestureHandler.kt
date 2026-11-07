@@ -56,6 +56,7 @@ fun Modifier.playerGestureHandler(
     onVolumeChange: ((level: Int, max: Int) -> Unit)? = null,
     onBrightnessChange: ((level: Float) -> Unit)? = null,
     isLongPressActive: MutableState<Boolean>? = null,
+    isGestureLocked: Boolean = false,
 ): Modifier {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -72,6 +73,7 @@ fun Modifier.playerGestureHandler(
     val currentOnVolumeChange = rememberUpdatedState(onVolumeChange)
     val currentOnBrightnessChange = rememberUpdatedState(onBrightnessChange)
     val currentIsLongPressActive = rememberUpdatedState(isLongPressActive)
+    val currentIsGestureLocked = rememberUpdatedState(isGestureLocked)
 
     val flags = remember { GestureFlags() }
 
@@ -88,13 +90,16 @@ fun Modifier.playerGestureHandler(
                     currentOnSingleTap.value?.invoke()
                 },
                 onDoubleTap = { position ->
-                    when {
-                        position.x <= size.width * 0.28f -> currentOnSeekBy.value(-10.0, SeekSource.DOUBLE_TAP)
-                        position.x >= size.width * 0.72f -> currentOnSeekBy.value(10.0, SeekSource.DOUBLE_TAP)
-                        else -> currentOnDoubleTap.value?.invoke()
+                    if (!currentIsGestureLocked.value) {
+                        when {
+                            position.x <= size.width * 0.28f -> currentOnSeekBy.value(-10.0, SeekSource.DOUBLE_TAP)
+                            position.x >= size.width * 0.72f -> currentOnSeekBy.value(10.0, SeekSource.DOUBLE_TAP)
+                            else -> currentOnDoubleTap.value?.invoke()
+                        }
                     }
                 },
                 onLongPress = {
+                    if (currentIsGestureLocked.value) return@detectTapGestures
                     if (flags.gestureClaimed) return@detectTapGestures
                     flags.longPressActive = true
                     currentIsLongPressActive.value?.value = true
@@ -207,36 +212,38 @@ fun Modifier.playerGestureHandler(
                         }
                     }
 
-                    when (mode) {
-                        GestureMode.SEEK -> {
-                            val width = size.width.toFloat().coerceAtLeast(1f)
-                            val deltaX = totalPanX - lastAppliedPanX
-                            currentOnSeekBy.value(
-                                (deltaX / width * seekSecondsPerFullWidth).toDouble(),
-                                SeekSource.SWIPE
-                            )
-                            lastAppliedPanX = totalPanX
-                        }
+                    if (!currentIsGestureLocked.value) {
+                        when (mode) {
+                            GestureMode.SEEK -> {
+                                val width = size.width.toFloat().coerceAtLeast(1f)
+                                val deltaX = totalPanX - lastAppliedPanX
+                                currentOnSeekBy.value(
+                                    (deltaX / width * seekSecondsPerFullWidth).toDouble(),
+                                    SeekSource.SWIPE
+                                )
+                                lastAppliedPanX = totalPanX
+                            }
 
-                        GestureMode.VOLUME -> {
-                            val height = size.height.toFloat().coerceAtLeast(1f)
-                            val change = (-(totalPanY - committedPanY) / height * maxVolume * 1.5f).roundToInt()
-                            val target = (startVolume + change).coerceIn(0, maxVolume)
-                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-                            currentOnVolumeChange.value?.invoke(target, maxVolume)
-                        }
+                            GestureMode.VOLUME -> {
+                                val height = size.height.toFloat().coerceAtLeast(1f)
+                                val change = (-(totalPanY - committedPanY) / height * maxVolume * 1.5f).roundToInt()
+                                val target = (startVolume + change).coerceIn(0, maxVolume)
+                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+                                currentOnVolumeChange.value?.invoke(target, maxVolume)
+                            }
 
-                        GestureMode.BRIGHTNESS -> {
-                            val height = size.height.toFloat().coerceAtLeast(1f)
-                            val change = -(totalPanY - committedPanY) / height * 1.5f
-                            val target = (startBrightness + change).coerceIn(0f, 1f)
-                            window?.updateBrightness(target)
-                            currentOnBrightnessChange.value?.invoke(target)
-                        }
+                            GestureMode.BRIGHTNESS -> {
+                                val height = size.height.toFloat().coerceAtLeast(1f)
+                                val change = -(totalPanY - committedPanY) / height * 1.5f
+                                val target = (startBrightness + change).coerceIn(0f, 1f)
+                                window?.updateBrightness(target)
+                                currentOnBrightnessChange.value?.invoke(target)
+                            }
 
-                        GestureMode.UNDECIDED,
-                        GestureMode.PINCH,
-                        GestureMode.SUPPRESSED -> Unit
+                            GestureMode.UNDECIDED,
+                            GestureMode.PINCH,
+                            GestureMode.SUPPRESSED -> Unit
+                        }
                     }
 
                     if (mode != GestureMode.UNDECIDED) {
