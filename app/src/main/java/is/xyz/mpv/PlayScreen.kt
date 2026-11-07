@@ -505,8 +505,7 @@ fun PlayScreen(
                 activeDialog = TrackDialogType.NONE
                 resetHideTimer()
             },
-            isPopUpPlayerActive = false,
-            isRepeatModeActive = false,
+            isPipModeActive = false,
             onLockClick = {
                 isLocked = true
                 lockControlsVisible = false
@@ -514,25 +513,7 @@ fun PlayScreen(
                 activeDialog = TrackDialogType.NONE
                 hideJob?.cancel()
             },
-            onSleepTimerClick = {
-                // TODO: implement
-            },
-            onPlaybackSpeedClick = {
-                // TODO: implement
-            },
-            onJumpToTimeClick = {
-                // TODO: implement
-            },
-            onEqualizerClick = {
-                // TODO: implement
-            },
-            onPlayAsAudioClick = {
-                // TODO: implement
-            },
-            onPopUpPlayerClick = {
-                // TODO: implement
-            },
-            onRepeatModeClick = {
+            onPipModeClick = {
                 // TODO: implement
             }
         )

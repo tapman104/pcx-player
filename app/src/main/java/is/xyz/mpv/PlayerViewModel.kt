@@ -352,7 +352,10 @@ class PlayerViewModel(
 
     fun toggleFitScreen() {
         val next = !_videoZoomState.value.isFitScreenEnabled
-        _videoZoomState.value = _videoZoomState.value.copy(isFitScreenEnabled = next)
+        _videoZoomState.value = _videoZoomState.value.copy(
+            isFitScreenEnabled = next,
+            zoom = if (next) 1.0f else _videoZoomState.value.zoom
+        )
         if (next) engine.enableFitScreen() else engine.disableFitScreen()
     }
 
