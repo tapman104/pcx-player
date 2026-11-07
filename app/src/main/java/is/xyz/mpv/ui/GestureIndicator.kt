@@ -122,6 +122,16 @@ fun GestureIndicatorOverlay(
             return@AnimatedVisibility
         }
 
+        if (current is GestureIndicator.Speed) {
+            Text(
+                text = "${current.multiplier}x",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp
+            )
+            return@AnimatedVisibility
+        }
+
         val (icon, text) = when (current) {
             is GestureIndicator.Volume -> {
                 Icons.Filled.VolumeUp to "Volume ${current.level}/${current.max}"
@@ -129,13 +139,11 @@ fun GestureIndicatorOverlay(
             is GestureIndicator.Brightness -> {
                 Icons.Filled.BrightnessHigh to "Brightness ${(current.level * 100).toInt()}%"
             }
-            is GestureIndicator.Speed -> {
-                Icons.Filled.Speed to "${current.multiplier}x"
-            }
             is GestureIndicator.Zoom -> {
                 Icons.Filled.ZoomIn to "${(current.level * 100).toInt()}%"
             }
             is GestureIndicator.Seek -> return@AnimatedVisibility
+            is GestureIndicator.Speed -> return@AnimatedVisibility
         }
 
         Box(

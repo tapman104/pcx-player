@@ -457,6 +457,7 @@ fun PlayScreen(
                     Alignment.Center to PaddingValues(0.dp)
                 }
             }
+            is GestureIndicator.Speed -> Alignment.TopCenter to PaddingValues(top = 80.dp)
             else -> Alignment.Center to PaddingValues(0.dp)
         }
         GestureIndicatorOverlay(
