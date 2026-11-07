@@ -341,8 +341,6 @@ open class MpvEngine(
             savedPanY = null
         }
         lastWrittenZoom = null
-        eventHandler.clearGeometry()
-        eventHandler.clearProgress()
         eventHandler.reset()
         if (isReady && surfaceAttachmentState is SurfaceAttachmentState.Attached) {
             pendingFilePath = null
