@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +29,7 @@ fun PlayerTopBar(
     onOpenFileClick: (() -> Unit)? = null,
     onAudioTrackClick: (() -> Unit)? = null,
     onSubtitleTrackClick: (() -> Unit)? = null,
+    onMoreClick: (() -> Unit)? = null,
     isEngineReady: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -81,6 +83,15 @@ fun PlayerTopBar(
                         )
                     }
                 }
+                if (onMoreClick != null) {
+                    IconButton(onClick = onMoreClick) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = "More options",
+                            tint = Color.White
+                        )
+                    }
+                }
                 if (onOpenFileClick != null) {
                     IconButton(onClick = onOpenFileClick) {
                         Icon(
@@ -100,4 +111,3 @@ fun PlayerTopBar(
         )
     }
 }
-

@@ -367,6 +367,10 @@ fun PlayScreen(
                     hideJob?.cancel()
                     activeDialog = TrackDialogType.SUBTITLE
                 },
+                onMoreClick = {
+                    hideJob?.cancel()
+                    activeDialog = TrackDialogType.MORE_OPTIONS
+                },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -533,63 +537,51 @@ fun PlayScreen(
             }
         )
 
-        // Overlay: Locked indicator
-        AnimatedVisibility(
-            visible = isLocked,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 24.dp)
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Lock,
-                        contentDescription = "Locked",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Locked",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
-                    )
-                }
-            }
-        }
-
-        // Overlay: SlideToUnlock
+        // Overlay: Lock controls (badge + unlock)
         AnimatedVisibility(
             visible = isLocked && lockControlsVisible,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.Center)
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 24.dp)
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = "Locked",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Locked",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White
+                        )
+                    }
+                }
+
                 SlideToUnlock(
                     onUnlock = {
                         isLocked = false
                         lockControlsVisible = false
                         controlsVisible = true
                         resetHideTimer()
-                    },
-                    modifier = Modifier.width(220.dp)
+                    }
                 )
             }
         }
