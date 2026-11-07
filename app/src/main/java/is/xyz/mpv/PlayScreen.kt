@@ -71,7 +71,7 @@ fun PlayScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val orientationState by viewModel.orientationState.collectAsState()
-    val currentZoom by viewModel.currentZoom.collectAsState()
+    val videoZoomState by viewModel.videoZoomState.collectAsState()
     val subFontSize by viewModel.subFontSize.collectAsState()
     val subPos by viewModel.subPos.collectAsState()
     val context = LocalContext.current
@@ -231,7 +231,7 @@ fun PlayScreen(
                     onZoomBy = {
                         doubleTapAccumulatedDelta = 0.0
                         viewModel.zoomBy(it)
-                        indicator = GestureIndicator.Zoom(viewModel.currentZoom.value)
+                        indicator = GestureIndicator.Zoom(videoZoomState.zoom)
                         indicatorRevision++
                     },
                     onDoubleTap = {
@@ -358,6 +358,7 @@ fun PlayScreen(
             PlayerBottomBarHost(
                 playbackProgressFlow = viewModel.playbackProgress,
                 isEnabled = uiState.isEngineReady,
+                isFitScreenEnabled = videoZoomState.isFitScreenEnabled,
                 onSeek = { pos ->
                     viewModel.seekTo(pos)
                     controlsVisible = true
@@ -368,6 +369,10 @@ fun PlayScreen(
                 },
                 onRotateClick = {
                     viewModel.toggleOrientationOverride { configuration.orientation }
+                    resetHideTimer()
+                },
+                onFitScreenClick = {
+                    viewModel.toggleFitScreen()
                     resetHideTimer()
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -471,9 +476,11 @@ fun PlayScreen(
 private fun PlayerBottomBarHost(
     playbackProgressFlow: StateFlow<PlaybackProgress>,
     isEnabled: Boolean,
+    isFitScreenEnabled: Boolean,
     onSeek: (Double) -> Unit,
     onSeekStarted: (() -> Unit)? = null,
     onRotateClick: (() -> Unit)? = null,
+    onFitScreenClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val progress by playbackProgressFlow.collectAsState()
@@ -484,6 +491,8 @@ private fun PlayerBottomBarHost(
         onSeek = onSeek,
         onSeekStarted = onSeekStarted,
         onRotateClick = onRotateClick,
+        isFitScreenEnabled = isFitScreenEnabled,
+        onFitScreenClick = onFitScreenClick,
         modifier = modifier
     )
 }

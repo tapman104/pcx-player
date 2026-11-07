@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 
 import android.net.Uri
 import com.potato.player.BuildConfig
+import `is`.xyz.mpv.state.VideoZoomState
 import `is`.xyz.mpv.ui.UriUtils
 
 // ---------------------------------------------------------------------------
@@ -135,8 +137,18 @@ class PlayerViewModel(
     private val _playbackSpeed = MutableStateFlow(1f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
-    private val _currentZoom = MutableStateFlow(1f)
-    val currentZoom: StateFlow<Float> = _currentZoom.asStateFlow()
+    private val _videoZoomState = MutableStateFlow(VideoZoomState())
+    val videoZoomState: StateFlow<VideoZoomState> = _videoZoomState.asStateFlow()
+
+    val currentZoom: StateFlow<Float> = _videoZoomState
+        .map { it.zoom }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, _videoZoomState.value.zoom)
+
+    val isFitScreenEnabled: StateFlow<Boolean> = _videoZoomState
+        .map { it.isFitScreenEnabled }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, _videoZoomState.value.isFitScreenEnabled)
 
     private val _videoGeometry = MutableStateFlow(VideoGeometry())
     private val _orientationOverride = MutableStateFlow<OrientationMode?>(null)
@@ -300,7 +312,7 @@ class PlayerViewModel(
         _explicitFileName.value = name
         _playbackProgress.value = PlaybackProgress()
         _playbackSpeed.value = 1f
-        _currentZoom.value = 1f
+        _videoZoomState.value = VideoZoomState()
         _orientationOverride.value = null
         // FIX #5: Set isLoadingNewFile true before calling engine.playFile
         _isLoadingNewFile.value = true
@@ -330,10 +342,18 @@ class PlayerViewModel(
     fun getCurrentSpeed(): Float = _playbackSpeed.value
 
     fun zoomBy(factor: Float) {
-        val next = (_currentZoom.value * factor).coerceIn(0.5f, 4f)
-        val appliedFactor = next / _currentZoom.value
-        _currentZoom.value = next
-        engine.zoomBy(appliedFactor)
+        val current = _videoZoomState.value
+        val next = (current.zoom * factor).coerceIn(0.5f, 4f)
+        val appliedFactor = next / current.zoom
+        _videoZoomState.value = current.copy(zoom = next)
+        val currentMpvZoom = (kotlin.math.ln(current.zoom.toDouble()) / kotlin.math.ln(2.0)).toFloat()
+        engine.zoomBy(currentMpvZoom, appliedFactor)
+    }
+
+    fun toggleFitScreen() {
+        val next = !_videoZoomState.value.isFitScreenEnabled
+        _videoZoomState.value = _videoZoomState.value.copy(isFitScreenEnabled = next)
+        if (next) engine.enableFitScreen() else engine.disableFitScreen()
     }
 
     fun selectAudioTrack(id: Int) {

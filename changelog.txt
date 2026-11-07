@@ -405,3 +405,32 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 
 *feat: add temporary rotation override with toggle refinement 
 * feat(settings): add in-app log viewer with asynchronous redacted logging
+
+**07.11.2026
+
+*Fix seek handling and surface lifecycle issues 
+
+*FLAG_KEEP_SCREEN_ON has been added to PlayerActivity.kt
+
+
+
+*Fix pinch-zoom jitter, add Fit Screen toggle, fix audio underrun and surface teardown errors
+
+- MpvEngine: zoomBy() no longer reads video-zoom via JNI on every pinch
+  frame (was ~110µs/call at 50-60 calls/sec); takes current zoom as a
+  parameter instead. Added write-dedup to skip redundant mpv writes for
+  sub-pixel movements.
+- MpvEngine: add enableFitScreen()/disableFitScreen() — snapshots
+  video-zoom/pan-x/pan-y, zeroes them for fit-to-screen, restores exact
+  values on disable. Snapshot is discarded (not restored) when switching
+  files while active.
+- MpvEngine: pause mpv before detaching the surface in detachSurface() —
+  reduced "Both surface and native_window are NULL" mediacodec errors
+  from 12/10 to 0/10 repro runs.
+- MpvOptionsConfigurator: add audio-buffer=0.5 to fix audio underrun on
+  file load start (confirmed across 3 test files).
+- PlayerViewModel: introduce VideoZoomState as single source of truth for
+  zoom/fit-screen state; toggleFitScreen() added; loadFile() resets state
+  on file switch.
+- PlayerBottomBar/PlayScreen: wire Fit Screen button next to Rotate.
+

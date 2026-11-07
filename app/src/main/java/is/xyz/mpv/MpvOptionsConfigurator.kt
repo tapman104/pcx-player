@@ -56,6 +56,7 @@ class MpvOptionsConfigurator(context: Context) {
         setOption("opengl-es", "yes")
         setOption("hwdec-codecs", "h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1")
         setOption("ao", "audiotrack,opensles")
+        setOption("audio-buffer", "0.5")
         setOption("audio-set-media-role", "yes")
         setOption("tls-verify", "yes")
         setOption("tls-ca-file", "${appContext.filesDir.path}/cacert.pem")

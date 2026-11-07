@@ -87,8 +87,16 @@ object MPVLib {
 
     fun getPropertyInt(property: String): Int? = null
     fun setPropertyInt(property: String, value: Int) {}
-    fun getPropertyDouble(property: String): Double? = null
-    fun setPropertyDouble(property: String, value: Double) {}
+    val setPropertiesDouble = mutableMapOf<String, Double>()
+    val setPropertyDoubleCalls = mutableListOf<Pair<String, Double>>()
+
+    fun getPropertyDouble(property: String): Double? = synchronized(setPropertiesDouble) { setPropertiesDouble[property] }
+    fun setPropertyDouble(property: String, value: Double) {
+        synchronized(setPropertyDoubleCalls) {
+            setPropertyDoubleCalls.add(property to value)
+            setPropertiesDouble[property] = value
+        }
+    }
     fun getPropertyBoolean(property: String): Boolean? = false
     fun setPropertyBoolean(property: String, value: Boolean) {}
     val setPropertiesString = mutableMapOf<String, String>()
@@ -142,6 +150,10 @@ object MPVLib {
         synchronized(setPropertyStringCalls) {
             setPropertyStringCalls.clear()
             setPropertiesString.clear()
+        }
+        synchronized(setPropertyDoubleCalls) {
+            setPropertyDoubleCalls.clear()
+            setPropertiesDouble.clear()
         }
         simulateInitFailure = false
         simulatePostCreateFailure = false

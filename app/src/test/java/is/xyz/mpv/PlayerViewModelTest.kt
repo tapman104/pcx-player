@@ -393,6 +393,105 @@ class PlayerViewModelTest {
         assertEquals(0, MPVLib.registeredLogObservers.size)
     }
 
+    @Test
+    fun testToggleFitScreenTogglesStateAndCallsEngine() {
+        val context = createTestContext()
+        val testScope = CoroutineScope(Dispatchers.Unconfined)
+        val viewModel = PlayerViewModel(context, coroutineScope = testScope)
+
+        assertFalse(viewModel.isFitScreenEnabled.value)
+
+        MPVLib.setPropertiesDouble["video-zoom"] = 1.8
+        MPVLib.setPropertiesDouble["video-pan-x"] = 0.2
+        MPVLib.setPropertiesDouble["video-pan-y"] = -0.1
+
+        viewModel.toggleFitScreen()
+        assertTrue(viewModel.isFitScreenEnabled.value)
+        assertEquals(0.0, MPVLib.getPropertyDouble("video-zoom") ?: 1.0, 0.0)
+
+        viewModel.toggleFitScreen()
+        assertFalse(viewModel.isFitScreenEnabled.value)
+        assertEquals(1.8, MPVLib.getPropertyDouble("video-zoom") ?: 0.0, 0.0)
+    }
+
+    @Test
+    fun testLoadFileWhileFitScreenActiveClearsSnapshotAndResetsIsFitScreenEnabledWithoutWritingOldZoom() {
+        val context = createTestContext()
+        val testScope = CoroutineScope(Dispatchers.Unconfined)
+        val viewModel = PlayerViewModel(context, coroutineScope = testScope)
+
+        // Setup initial zoom and enable fit screen
+        MPVLib.setPropertiesDouble["video-zoom"] = 2.5
+        MPVLib.setPropertiesDouble["video-pan-x"] = 0.4
+        MPVLib.setPropertiesDouble["video-pan-y"] = 0.6
+
+        viewModel.toggleFitScreen()
+        assertTrue(viewModel.isFitScreenEnabled.value)
+        assertEquals(0.0, MPVLib.getPropertyDouble("video-zoom") ?: 1.0, 0.0)
+
+        MPVLib.setPropertyDoubleCalls.clear()
+
+        // Load new file
+        viewModel.loadFile("/path/to/another_video.mp4")
+
+        // 1. isFitScreenEnabled must be reset to false
+        assertFalse("isFitScreenEnabled must be reset to false on loadFile", viewModel.isFitScreenEnabled.value)
+
+        // 2. WITHOUT writing old zoom (2.5) to mpv
+        val wroteOldZoom = MPVLib.setPropertyDoubleCalls.any { (prop, value) ->
+            prop == "video-zoom" && value == 2.5
+        }
+        assertFalse("loadFile must NOT write the old zoom to mpv", wroteOldZoom)
+        assertTrue("No setPropertyDouble calls should be made during loadFile", MPVLib.setPropertyDoubleCalls.isEmpty())
+
+        // 3. Engine snapshot must be cleared (calling engine.disableFitScreen() does not restore 2.5)
+        viewModel.engine.disableFitScreen()
+        assertTrue("disableFitScreen must do nothing because snapshot was cleared", MPVLib.setPropertyDoubleCalls.isEmpty())
+
+        // 4. VideoZoomState is reset to defaults
+        assertEquals(1f, viewModel.videoZoomState.value.zoom, 0.0f)
+        assertFalse(viewModel.videoZoomState.value.isFitScreenEnabled)
+    }
+
+    @Test
+    fun testVideoZoomStateFitScreenEnableDisableWorksCorrectly() {
+        val context = createTestContext()
+        val testScope = CoroutineScope(Dispatchers.Unconfined)
+        val viewModel = PlayerViewModel(context, coroutineScope = testScope)
+
+        assertEquals(1f, viewModel.videoZoomState.value.zoom, 0.0f)
+        assertFalse(viewModel.videoZoomState.value.isFitScreenEnabled)
+
+        MPVLib.setPropertiesDouble["video-zoom"] = 1.4
+        MPVLib.setPropertiesDouble["video-pan-x"] = 0.2
+        MPVLib.setPropertiesDouble["video-pan-y"] = 0.1
+
+        viewModel.toggleFitScreen()
+        assertTrue(viewModel.videoZoomState.value.isFitScreenEnabled)
+        assertTrue(viewModel.isFitScreenEnabled.value)
+        assertEquals(0.0, MPVLib.getPropertyDouble("video-zoom") ?: 1.0, 0.0)
+
+        viewModel.toggleFitScreen()
+        assertFalse(viewModel.videoZoomState.value.isFitScreenEnabled)
+        assertFalse(viewModel.isFitScreenEnabled.value)
+        assertEquals(1.4, MPVLib.getPropertyDouble("video-zoom") ?: 0.0, 0.0)
+    }
+
+    @Test
+    fun testSwitchingVideosClearsVideoZoomStateFitScreenFlag() {
+        val context = createTestContext()
+        val testScope = CoroutineScope(Dispatchers.Unconfined)
+        val viewModel = PlayerViewModel(context, coroutineScope = testScope)
+
+        viewModel.toggleFitScreen()
+        assertTrue(viewModel.videoZoomState.value.isFitScreenEnabled)
+
+        viewModel.loadFile("/path/to/next_video.mp4")
+
+        assertFalse("Switching videos must clear VideoZoomState fit-screen flag", viewModel.videoZoomState.value.isFitScreenEnabled)
+        assertEquals(1f, viewModel.videoZoomState.value.zoom, 0.0f)
+    }
+
     companion object {
         private val testCounter = AtomicInteger(0)
     }

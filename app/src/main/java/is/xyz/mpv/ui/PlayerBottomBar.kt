@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -26,6 +28,8 @@ fun PlayerBottomBar(
     onSeek: (Double) -> Unit,
     onSeekStarted: (() -> Unit)? = null,
     onRotateClick: (() -> Unit)? = null,
+    isFitScreenEnabled: Boolean = false,
+    onFitScreenClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val brush = Brush.verticalGradient(
@@ -40,17 +44,28 @@ fun PlayerBottomBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            if (onRotateClick != null) {
+            if (onRotateClick != null || onFitScreenClick != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Start
                 ) {
-                    IconButton(onClick = onRotateClick) {
-                        Icon(
-                            imageVector = Icons.Default.ScreenRotation,
-                            contentDescription = "Rotate screen",
-                            tint = Color.White
-                        )
+                    if (onRotateClick != null) {
+                        IconButton(onClick = onRotateClick) {
+                            Icon(
+                                imageVector = Icons.Default.ScreenRotation,
+                                contentDescription = "Rotate screen",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                    if (onFitScreenClick != null) {
+                        IconButton(onClick = onFitScreenClick) {
+                            Icon(
+                                imageVector = Icons.Default.FitScreen,
+                                contentDescription = "Fit screen",
+                                tint = if (isFitScreenEnabled) MaterialTheme.colorScheme.primary else Color.White
+                            )
+                        }
                     }
                 }
             }
