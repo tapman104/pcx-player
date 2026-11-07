@@ -3,6 +3,7 @@ package `is`.xyz.mpv
 import android.content.Context
 import android.util.Log
 import android.view.Surface
+import java.math.BigDecimal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -194,8 +195,8 @@ open class MpvEngine(
      */
     private fun attachSurface(surface: Surface) {
         Log.w(TAG, "attaching surface")
-        surfaceAttachmentState = SurfaceAttachmentState.Attached
         MPVLib.attachSurface(surface)
+        surfaceAttachmentState = SurfaceAttachmentState.Attached
         // This forces mpv to render subs/osd/whatever into our surface even if it would ordinarily not
         MPVLib.setOptionString("force-window", "yes")
         MPVLib.setPropertyString("force-window", "yes")
@@ -254,7 +255,7 @@ open class MpvEngine(
         pendingSurface = null
         pendingFilePath = null
         pendingSurfaceSize = null
-        if (surfaceAttachmentState is SurfaceAttachmentState.Attached && isReady) {
+        if (surfaceAttachmentState is SurfaceAttachmentState.Attached && currentStatus is EngineStatus.Ready) {
             detachSurface()
         } else if (surfaceAttachmentState !is SurfaceAttachmentState.DetachFailed) {
             surfaceAttachmentState = SurfaceAttachmentState.Detached
@@ -356,8 +357,8 @@ open class MpvEngine(
      * Seek to an absolute position in seconds. Guarded by [isReady].
      */
     fun seekTo(positionSec: Double) {
-        if (!isReady) return
-        MPVLib.command(arrayOf("seek", positionSec.toString(), "absolute"))
+        if (!isReady || !positionSec.isFinite()) return
+        MPVLib.command(arrayOf("seek", formatSeekArg(positionSec), "absolute"))
     }
 
     /**
@@ -366,9 +367,12 @@ open class MpvEngine(
      * trip through a cached position value. Guarded by [isReady].
      */
     fun seekBy(offsetSec: Double) {
-        if (!isReady) return
-        MPVLib.command(arrayOf("seek", offsetSec.toString(), "relative"))
+        if (!isReady || !offsetSec.isFinite()) return
+        MPVLib.command(arrayOf("seek", formatSeekArg(offsetSec), "relative"))
     }
+
+    private fun formatSeekArg(value: Double): String =
+        BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
 
     /**
      * Set playback speed as a multiplier (1.0 = normal). Guarded by [isReady].

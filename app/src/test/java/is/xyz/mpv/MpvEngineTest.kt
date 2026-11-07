@@ -1003,4 +1003,123 @@ class MpvEngineTest {
         assertFalse("Final status must not be Ready", finalStatus is EngineStatus.Ready)
         assertEquals("Simulated MPVLib.init failure", (finalStatus as EngineStatus.Failed).reason)
     }
+
+    @Test
+    fun testFormatSeekArgAvoidsScientificNotation() {
+        val eventHandler = EngineEventHandler()
+        val context = createTestContext()
+        val engine = MpvEngine(context, eventHandler)
+        val method = MpvEngine::class.java.getDeclaredMethod("formatSeekArg", java.lang.Double.TYPE).apply {
+            isAccessible = true
+        }
+        val formatSeekArg: (Double) -> String = { value -> method.invoke(engine, value) as String }
+
+        val output = formatSeekArg(0.0008544921875)
+        assertFalse(output.contains("E"))
+        assertEquals("0.0008544921875", output)
+    }
+
+    @Test
+    fun testFormatSeekArgZeroEdgeCase() {
+        val eventHandler = EngineEventHandler()
+        val context = createTestContext()
+        val engine = MpvEngine(context, eventHandler)
+        val method = MpvEngine::class.java.getDeclaredMethod("formatSeekArg", java.lang.Double.TYPE).apply {
+            isAccessible = true
+        }
+        val formatSeekArg: (Double) -> String = { value -> method.invoke(engine, value) as String }
+
+        val output = formatSeekArg(0.0)
+        assertEquals("0", output)
+    }
+
+    @Test
+    fun testDestroyWhileReadyAndSurfaceAttachedFiresDetachSurfaceNativeCalls() {
+        val eventHandler = EngineEventHandler()
+        val context = createTestContext()
+        val engine = MpvEngine(context, eventHandler)
+        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
+        assertEquals(EngineStatus.Ready, engine.status.value)
+
+        val surface = android.view.Surface(android.graphics.SurfaceTexture(0))
+        engine.onSurfaceCreated(surface)
+        assertEquals(SurfaceAttachmentState.Attached, engine.surfaceAttachment)
+
+        MPVLib.setPropertyStringCalls.clear()
+        val detachCountBefore = MPVLib.detachSurfaceCallCount
+
+        engine.destroy()
+
+        assertTrue(
+            "vo=null must be sent to MPVLib",
+            MPVLib.setPropertyStringCalls.contains("vo" to "null")
+        )
+        assertTrue(
+            "force-window=no must be sent to MPVLib",
+            MPVLib.setPropertyStringCalls.contains("force-window" to "no")
+        )
+        assertEquals(
+            "MPVLib.detachSurface must be called",
+            detachCountBefore + 1,
+            MPVLib.detachSurfaceCallCount
+        )
+        assertEquals(EngineStatus.NotStarted, engine.status.value)
+    }
+
+    @Test
+    fun testAttachSurfaceFailureDoesNotLeaveAttachmentStateAsAttached() {
+        val eventHandler = EngineEventHandler()
+        val context = createTestContext()
+        val engine = MpvEngine(context, eventHandler)
+        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
+        assertEquals(EngineStatus.Ready, engine.status.value)
+
+        MPVLib.simulateAttachSurfaceFailure = true
+
+        val surface = android.view.Surface(android.graphics.SurfaceTexture(0))
+        try {
+            engine.onSurfaceCreated(surface)
+            fail("Expected attachSurface to throw on simulated failure")
+        } catch (_: Throwable) {
+            // Expected
+        }
+
+        assertFalse(
+            "surfaceAttachmentState must not be left as Attached",
+            engine.isSurfaceAttached
+        )
+        assertFalse(
+            "surfaceAttachmentState must not be Attached",
+            engine.surfaceAttachment is SurfaceAttachmentState.Attached
+        )
+    }
+
+    @Test
+    fun testSeekRejectsNonFiniteValues() {
+        val eventHandler = EngineEventHandler()
+        val context = createTestContext()
+        val engine = MpvEngine(context, eventHandler)
+        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
+        assertEquals(EngineStatus.Ready, engine.status.value)
+        MPVLib.executedCommands.clear()
+
+        // seekTo with NaN, positive infinity, and negative infinity must be ignored
+        engine.seekTo(Double.NaN)
+        engine.seekTo(Double.POSITIVE_INFINITY)
+        engine.seekTo(Double.NEGATIVE_INFINITY)
+        assertTrue("seekTo must ignore non-finite values", MPVLib.executedCommands.isEmpty())
+
+        // seekBy with NaN, positive infinity, and negative infinity must be ignored
+        engine.seekBy(Double.NaN)
+        engine.seekBy(Double.POSITIVE_INFINITY)
+        engine.seekBy(Double.NEGATIVE_INFINITY)
+        assertTrue("seekBy must ignore non-finite values", MPVLib.executedCommands.isEmpty())
+
+        // Preserve existing seek behavior for valid values
+        engine.seekTo(12.345)
+        assertEquals(listOf("seek", "12.345", "absolute"), MPVLib.executedCommands.last())
+
+        engine.seekBy(-5.0)
+        assertEquals(listOf("seek", "-5", "relative"), MPVLib.executedCommands.last())
+    }
 }

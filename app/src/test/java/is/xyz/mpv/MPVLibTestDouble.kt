@@ -14,8 +14,10 @@ object MPVLib {
     var simulatePostCreateFailure: Boolean = false
     var simulateDestroyFailure: Boolean = false
     var simulateDetachSurfaceFailure: Boolean = false
+    var simulateAttachSurfaceFailure: Boolean = false
     var destroyCallCount: Int = 0
     var createCallCount: Int = 0
+    var detachSurfaceCallCount: Int = 0
     var isCreated: Boolean = false
     var onDestroy: (() -> Unit)? = null
 
@@ -48,17 +50,26 @@ object MPVLib {
     val loadedFiles = mutableListOf<String>()
 
     fun attachSurface(surface: Surface) {
+        if (simulateAttachSurfaceFailure) {
+            throw RuntimeException("Simulated MPVLib.attachSurface failure")
+        }
         synchronized(attachedSurfaces) {
             attachedSurfaces.add(surface)
         }
     }
     fun detachSurface() {
+        detachSurfaceCallCount++
         if (simulateDetachSurfaceFailure) {
             throw RuntimeException("Simulated MPVLib.detachSurface failure")
         }
     }
 
+    val executedCommands = mutableListOf<List<String>>()
+
     fun command(cmd: Array<out String>) {
+        synchronized(executedCommands) {
+            executedCommands.add(cmd.toList())
+        }
         if (cmd.isNotEmpty() && cmd[0] == "loadfile" && cmd.size > 1) {
             synchronized(loadedFiles) {
                 loadedFiles.add(cmd[1])
@@ -125,6 +136,9 @@ object MPVLib {
         synchronized(loadedFiles) {
             loadedFiles.clear()
         }
+        synchronized(executedCommands) {
+            executedCommands.clear()
+        }
         synchronized(setPropertyStringCalls) {
             setPropertyStringCalls.clear()
             setPropertiesString.clear()
@@ -133,8 +147,10 @@ object MPVLib {
         simulatePostCreateFailure = false
         simulateDestroyFailure = false
         simulateDetachSurfaceFailure = false
+        simulateAttachSurfaceFailure = false
         destroyCallCount = 0
         createCallCount = 0
+        detachSurfaceCallCount = 0
         isCreated = false
         onDestroy = null
     }
