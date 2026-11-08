@@ -6,6 +6,7 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import `is`.xyz.mpv.state.VideoTransform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -1124,175 +1125,42 @@ class MpvEngineTest {
     }
 
     @Test
-    fun testEnableFitScreenCapturesThenZeroesProperties() {
+    fun testSetVideoTransformWhenNotReadyDoesNothing() {
         val eventHandler = EngineEventHandler()
         val context = createTestContext()
         val engine = MpvEngine(context, eventHandler)
 
-        // Calling before ready must do nothing
-        MPVLib.setPropertiesDouble["video-zoom"] = 1.25
-        MPVLib.setPropertiesDouble["video-pan-x"] = 0.5
-        MPVLib.setPropertiesDouble["video-pan-y"] = -0.25
-        engine.enableFitScreen()
-        assertEquals(1.25, MPVLib.getPropertyDouble("video-zoom") ?: 0.0, 0.0)
+        MPVLib.setPropertyDoubleCalls.clear()
+        engine.setVideoTransform(VideoTransform(zoom = 2.0f, panX = 0.5, panY = -0.25))
+        assertTrue("Calling setVideoTransform before engine is ready must be a no-op", MPVLib.setPropertyDoubleCalls.isEmpty())
+    }
 
-        // Initialize engine to Ready
+    @Test
+    fun testSetVideoTransformConvertsLinearZoomToLog2AndSetsProperties() {
+        val eventHandler = EngineEventHandler()
+        val context = createTestContext()
+        val engine = MpvEngine(context, eventHandler)
         engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
         assertEquals(EngineStatus.Ready, engine.status.value)
         MPVLib.setPropertyDoubleCalls.clear()
 
-        // Enable fit screen captures properties then zeroes them
-        engine.enableFitScreen()
-        assertEquals(0.0, MPVLib.getPropertyDouble("video-zoom") ?: 1.0, 0.0)
-        assertEquals(0.0, MPVLib.getPropertyDouble("video-pan-x") ?: 1.0, 0.0)
-        assertEquals(0.0, MPVLib.getPropertyDouble("video-pan-y") ?: 1.0, 0.0)
-
-        assertTrue(MPVLib.setPropertyDoubleCalls.contains("video-zoom" to 0.0))
-        assertTrue(MPVLib.setPropertyDoubleCalls.contains("video-pan-x" to 0.0))
-        assertTrue(MPVLib.setPropertyDoubleCalls.contains("video-pan-y" to 0.0))
-    }
-
-    @Test
-    fun testDisableFitScreenRestoresExactCapturedValues() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-
-        MPVLib.setPropertiesDouble["video-zoom"] = 1.5
-        MPVLib.setPropertiesDouble["video-pan-x"] = -0.4
-        MPVLib.setPropertiesDouble["video-pan-y"] = 0.8
-
-        engine.enableFitScreen()
-        assertEquals(0.0, MPVLib.getPropertyDouble("video-zoom") ?: 1.0, 0.0)
-
-        MPVLib.setPropertyDoubleCalls.clear()
-        engine.disableFitScreen()
-
-        assertEquals(1.5, MPVLib.getPropertyDouble("video-zoom") ?: 0.0, 0.0)
-        assertEquals(-0.4, MPVLib.getPropertyDouble("video-pan-x") ?: 0.0, 0.0)
-        assertEquals(0.8, MPVLib.getPropertyDouble("video-pan-y") ?: 0.0, 0.0)
-
-        // Second disableFitScreen is a no-op (snapshot cleared)
-        MPVLib.setPropertyDoubleCalls.clear()
-        engine.disableFitScreen()
-        assertTrue("Calling disableFitScreen again should be a no-op", MPVLib.setPropertyDoubleCalls.isEmpty())
-    }
-
-    @Test
-    fun testCallingEnableFitScreenTwiceDoesNotOverwriteSnapshot() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-
-        MPVLib.setPropertiesDouble["video-zoom"] = 2.0
-        MPVLib.setPropertiesDouble["video-pan-x"] = 0.3
-        MPVLib.setPropertiesDouble["video-pan-y"] = -0.3
-
-        engine.enableFitScreen()
-        assertEquals(0.0, MPVLib.getPropertyDouble("video-zoom") ?: 1.0, 0.0)
-
-        // Mutate double properties while fit screen is active
-        MPVLib.setPropertiesDouble["video-zoom"] = 0.5
-        MPVLib.setPropertiesDouble["video-pan-x"] = 0.1
-        MPVLib.setPropertiesDouble["video-pan-y"] = 0.1
-        MPVLib.setPropertyDoubleCalls.clear()
-
-        // Calling enableFitScreen a second time must NOT overwrite the snapshot
-        engine.enableFitScreen()
-        assertTrue("Calling enableFitScreen again must be a no-op", MPVLib.setPropertyDoubleCalls.isEmpty())
-
-        // Calling disableFitScreen restores the original snapshot values (2.0, 0.3, -0.3)
-        engine.disableFitScreen()
-        assertEquals(2.0, MPVLib.getPropertyDouble("video-zoom") ?: 0.0, 0.0)
-        assertEquals(0.3, MPVLib.getPropertyDouble("video-pan-x") ?: 0.0, 0.0)
-        assertEquals(-0.3, MPVLib.getPropertyDouble("video-pan-y") ?: 0.0, 0.0)
-    }
-
-    @Test
-    fun testPlayFileWhileFitScreenActiveClearsSnapshotWithoutWritingOldZoomToMpv() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-
-        MPVLib.setPropertiesDouble["video-zoom"] = 1.75
-        MPVLib.setPropertiesDouble["video-pan-x"] = 0.2
-        MPVLib.setPropertiesDouble["video-pan-y"] = 0.4
-
-        engine.enableFitScreen()
-        MPVLib.setPropertyDoubleCalls.clear()
-
-        // playFile should clear snapshot WITHOUT calling disableFitScreen or writing old zoom
-        engine.playFile("/path/to/another.mp4")
-
-        val wroteOldZoom = MPVLib.setPropertyDoubleCalls.any { (prop, value) ->
-            prop == "video-zoom" && value == 1.75
-        }
-        assertFalse("playFile must NOT write old zoom to mpv", wroteOldZoom)
-        assertTrue("playFile must not set any double properties", MPVLib.setPropertyDoubleCalls.isEmpty())
-
-        // Subsequent disableFitScreen should do nothing because snapshot was cleared
-        engine.disableFitScreen()
-        assertTrue("disableFitScreen after playFile must do nothing", MPVLib.setPropertyDoubleCalls.isEmpty())
-    }
-
-    @Test
-    fun testZoomByComputesSameResultAsOldReadThenWriteVersionForSampleInputs() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-
-        val sampleInputs = listOf(
-            0.0f to 1.5f,
-            1.0f to 0.8f,
-            -0.5f to 1.25f,
-            0.5f to 2.0f
+        val sampleTransforms = listOf(
+            VideoTransform(zoom = 1.0f, panX = 0.0, panY = 0.0) to (0.0 to (0.0 to 0.0)),
+            VideoTransform(zoom = 2.0f, panX = 0.5, panY = -0.25) to (1.0 to (0.5 to -0.25)),
+            VideoTransform(zoom = 4.0f, panX = -0.4, panY = 0.8) to (2.0 to (-0.4 to 0.8)),
+            VideoTransform(zoom = 0.5f, panX = 0.2, panY = -0.1) to (-1.0 to (0.2 to -0.1)),
         )
 
-        for ((currentZoom, factor) in sampleInputs) {
-            // Reset state
-            engine.playFile("/path/to/test.mp4")
+        for ((transform, expected) in sampleTransforms) {
             MPVLib.setPropertyDoubleCalls.clear()
+            engine.setVideoTransform(transform)
 
-            // Calculate expected result based on old read-then-write formula
-            val expected = currentZoom + kotlin.math.ln(factor.toDouble()) / kotlin.math.ln(2.0)
+            val (expectedZoom, expectedPan) = expected
+            val (expectedPanX, expectedPanY) = expectedPan
 
-            engine.zoomBy(currentZoom, factor)
-
-            assertEquals(1, MPVLib.setPropertyDoubleCalls.size)
-            val (prop, value) = MPVLib.setPropertyDoubleCalls.first()
-            assertEquals("video-zoom", prop)
-            assertEquals(expected, value, 1e-6)
-            assertEquals(expected, MPVLib.getPropertyDouble("video-zoom") ?: 0.0, 1e-6)
+            assertEquals(expectedZoom, MPVLib.getPropertyDouble("video-zoom") ?: Double.NaN, 1e-6)
+            assertEquals(expectedPanX, MPVLib.getPropertyDouble("video-pan-x") ?: Double.NaN, 1e-6)
+            assertEquals(expectedPanY, MPVLib.getPropertyDouble("video-pan-y") ?: Double.NaN, 1e-6)
         }
-    }
-
-    @Test
-    fun testRepeatedNearIdenticalZoomValuesDoNotTriggerRepeatedMpvWrites() {
-        val eventHandler = EngineEventHandler()
-        val context = createTestContext()
-        val engine = MpvEngine(context, eventHandler)
-        engine.initialize(configDir = "/tmp/config", cacheDir = "/tmp/cache")
-        engine.playFile("/path/to/test.mp4")
-        MPVLib.setPropertyDoubleCalls.clear()
-
-        // First call writes to mpv
-        engine.zoomBy(0.0f, 1.2f)
-        assertEquals(1, MPVLib.setPropertyDoubleCalls.size)
-
-        // Near-identical zoom (delta ~0.0001, rounds to same at 3 decimal places)
-        val nearIdenticalFactor = 1.00005f
-        val currentZoom = (MPVLib.getPropertyDouble("video-zoom") ?: 0.0).toFloat()
-        engine.zoomBy(currentZoom, nearIdenticalFactor)
-
-        // Must NOT trigger another mpv write
-        assertEquals("Near-identical zoom must skip mpv write", 1, MPVLib.setPropertyDoubleCalls.size)
-
-        // Meaningful zoom movement (> 0.001) MUST trigger a write
-        engine.zoomBy(currentZoom, 1.05f)
-        assertEquals("Meaningful zoom must trigger mpv write", 2, MPVLib.setPropertyDoubleCalls.size)
     }
 }

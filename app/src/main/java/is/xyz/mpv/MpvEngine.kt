@@ -3,6 +3,7 @@ package `is`.xyz.mpv
 import android.content.Context
 import android.util.Log
 import android.view.Surface
+import `is`.xyz.mpv.state.VideoTransform
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,10 +68,6 @@ open class MpvEngine(
     private var voInUse: String = "gpu"
     private val optionsConfigurator = MpvOptionsConfigurator(appContext)
 
-    private var savedZoom: Double? = null
-    private var savedPanX: Double? = null
-    private var savedPanY: Double? = null
-    private var lastWrittenZoom: Double? = null
 
     /**
      * Initialize libmpv.
@@ -335,12 +332,6 @@ open class MpvEngine(
             Log.w(TAG, "playFile called when engine is Destroying; ignoring")
             return
         }
-        if (savedZoom != null) {
-            savedZoom = null
-            savedPanX = null
-            savedPanY = null
-        }
-        lastWrittenZoom = null
         eventHandler.reset()
         if (isReady && surfaceAttachmentState is SurfaceAttachmentState.Attached) {
             pendingFilePath = null
@@ -393,50 +384,20 @@ open class MpvEngine(
     }
 
     /**
-     * Apply an incremental zoom factor from a pinch gesture (e.g. 1.05 per
-     * frame) using the caller-supplied [currentZoom] level instead of reading
-     * it synchronously from native mpv. Converts the multiplicative gesture
-     * delta into mpv's logarithmic video-zoom property and writes the
-     * accumulated value back. Guarded by [isReady].
-     *
-     * Skips writing to mpv if the next zoom level rounds to the same value
-     * as [lastWrittenZoom] (at 3 decimal places precision).
+     * Apply absolute video transform (zoom and pan).
+     * Converts linear zoom to mpv's logarithmic video-zoom property (log2).
+     * Guarded by [isReady].
      */
-    fun zoomBy(currentZoom: Float, factor: Float) {
+    fun setVideoTransform(transform: VideoTransform) {
         if (!isReady) return
-        if (!factor.isFinite() || factor <= 0f) return
-        val delta = kotlin.math.ln(factor.toDouble()) / kotlin.math.ln(2.0)
-        val next = currentZoom + delta
-        val last = lastWrittenZoom
-        if (last != null && kotlin.math.abs(next - last) < 0.001) {
-            return
+        val mpvZoom = if (transform.zoom > 0f) {
+            kotlin.math.log2(transform.zoom.toDouble())
+        } else {
+            0.0
         }
-        lastWrittenZoom = next
-        MPVLib.setPropertyDouble("video-zoom", next)
-    }
-
-    fun enableFitScreen() {
-        if (!isReady) return
-        if (savedZoom != null) return
-        savedZoom = MPVLib.getPropertyDouble("video-zoom") ?: 0.0
-        savedPanX = MPVLib.getPropertyDouble("video-pan-x") ?: 0.0
-        savedPanY = MPVLib.getPropertyDouble("video-pan-y") ?: 0.0
-        lastWrittenZoom = 0.0
-        MPVLib.setPropertyDouble("video-zoom", 0.0)
-        MPVLib.setPropertyDouble("video-pan-x", 0.0)
-        MPVLib.setPropertyDouble("video-pan-y", 0.0)
-    }
-
-    fun disableFitScreen() {
-        if (!isReady) return
-        val zoom = savedZoom ?: return
-        lastWrittenZoom = zoom
-        MPVLib.setPropertyDouble("video-zoom", zoom)
-        MPVLib.setPropertyDouble("video-pan-x", savedPanX ?: 0.0)
-        MPVLib.setPropertyDouble("video-pan-y", savedPanY ?: 0.0)
-        savedZoom = null
-        savedPanX = null
-        savedPanY = null
+        MPVLib.setPropertyDouble("video-zoom", mpvZoom)
+        MPVLib.setPropertyDouble("video-pan-x", transform.panX)
+        MPVLib.setPropertyDouble("video-pan-y", transform.panY)
     }
 
     /**

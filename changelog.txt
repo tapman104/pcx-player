@@ -457,3 +457,11 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 - PlayerGestureHandler: add swipe seek threshold and commit final swipe seek delta
 
 *fix: prevent gesture indicator position jump during fade-out
+
+*refactor(player): centralize video transform synchronization
+
+- Move zoom and pan ownership to PlayerViewModel
+- Apply video transforms through a single readiness-aware collector
+- Reapply the latest transform when the MPV engine becomes Ready
+- Simplify Fit Screen state handling
+- Add tests for transform synchronization and lifecycle transitions

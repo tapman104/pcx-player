@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 
 import android.net.Uri
 import com.potato.player.BuildConfig
+import `is`.xyz.mpv.state.VideoTransform
 import `is`.xyz.mpv.state.VideoZoomState
 import `is`.xyz.mpv.ui.UriUtils
 
@@ -52,6 +54,11 @@ private data class SubAndLangPrefs(
     val pos: Int,
     val audioLang: String?,
     val subLang: String?,
+)
+
+private data class EngineTransformState(
+    val isReady: Boolean,
+    val transform: VideoTransform,
 )
 
 internal fun matchesLanguage(trackLang: String?, targetCode: String): Boolean {
@@ -186,6 +193,20 @@ class PlayerViewModel(
     init {
         AppLogger.i(TAG, "PlayerViewModel initialized")
         MPVLib.addLogObserver(logObserver)
+        // Centralized collector applying video transform (zoom/pan) to MPV whenever the engine becomes Ready
+        scope.launch {
+            combine(engine.status, _videoZoomState) { status, zoomState ->
+                EngineTransformState(
+                    isReady = status is EngineStatus.Ready,
+                    transform = zoomState.current,
+                )
+            }
+                .distinctUntilChanged()
+                .filter { it.isReady }
+                .collect { state ->
+                    engine.setVideoTransform(state.transform)
+                }
+        }
         // FIX #3: Combine engine.status with committed subtitle and language preferences to re-apply on preference emission when Ready
         scope.launch {
             combine(
@@ -342,21 +363,47 @@ class PlayerViewModel(
     fun getCurrentSpeed(): Float = _playbackSpeed.value
 
     fun zoomBy(factor: Float) {
-        val current = _videoZoomState.value
-        val next = (current.zoom * factor).coerceIn(0.5f, 4f)
-        val appliedFactor = next / current.zoom
-        _videoZoomState.value = current.copy(zoom = next)
-        val currentMpvZoom = (kotlin.math.ln(current.zoom.toDouble()) / kotlin.math.ln(2.0)).toFloat()
-        engine.zoomBy(currentMpvZoom, appliedFactor)
+        if (!factor.isFinite() || factor <= 0f) return
+        val state = _videoZoomState.value
+        val baseZoom = if (state.isFitScreenEnabled) 1f else state.current.zoom
+        val nextZoom = (baseZoom * factor).coerceIn(0.5f, 4f)
+        val nextTransform = VideoTransform(
+            zoom = nextZoom,
+            panX = if (state.isFitScreenEnabled) 0.0 else state.current.panX,
+            panY = if (state.isFitScreenEnabled) 0.0 else state.current.panY,
+        )
+        _videoZoomState.value = VideoZoomState(
+            current = nextTransform,
+            savedForFitScreen = null,
+        )
+    }
+
+    fun enableFitScreen() {
+        val state = _videoZoomState.value
+        if (state.isFitScreenEnabled) return
+        val neutralTransform = VideoTransform()
+        _videoZoomState.value = VideoZoomState(
+            current = neutralTransform,
+            savedForFitScreen = state.current,
+        )
+    }
+
+    fun disableFitScreen() {
+        val state = _videoZoomState.value
+        if (!state.isFitScreenEnabled) return
+        val restoredTransform = state.savedForFitScreen ?: VideoTransform()
+        _videoZoomState.value = VideoZoomState(
+            current = restoredTransform,
+            savedForFitScreen = null,
+        )
     }
 
     fun toggleFitScreen() {
-        val next = !_videoZoomState.value.isFitScreenEnabled
-        _videoZoomState.value = _videoZoomState.value.copy(
-            isFitScreenEnabled = next,
-            zoom = if (next) 1.0f else _videoZoomState.value.zoom
-        )
-        if (next) engine.enableFitScreen() else engine.disableFitScreen()
+        if (_videoZoomState.value.isFitScreenEnabled) {
+            disableFitScreen()
+        } else {
+            enableFitScreen()
+        }
     }
 
     fun selectAudioTrack(id: Int) {
