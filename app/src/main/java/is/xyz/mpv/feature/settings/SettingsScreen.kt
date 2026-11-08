@@ -56,6 +56,7 @@ sealed interface SettingsRoute {
     data object Decoder : SettingsRoute
     data object AppLogViewer : SettingsRoute
     data object About : SettingsRoute
+    data object Libraries : SettingsRoute
 }
 
 @Composable
@@ -66,7 +67,10 @@ fun SettingsScreen(
     var currentRoute by remember { mutableStateOf<SettingsRoute>(SettingsRoute.Hub) }
 
     BackHandler(enabled = currentRoute != SettingsRoute.Hub) {
-        currentRoute = SettingsRoute.Hub
+        currentRoute = when (currentRoute) {
+            SettingsRoute.Libraries -> SettingsRoute.About
+            else -> SettingsRoute.Hub
+        }
     }
 
     when (currentRoute) {
@@ -113,7 +117,13 @@ fun SettingsScreen(
         }
         SettingsRoute.About -> {
             AboutScreen(
-                onBackClick = { currentRoute = SettingsRoute.Hub }
+                onBackClick = { currentRoute = SettingsRoute.Hub },
+                onNavigateToLibraries = { currentRoute = SettingsRoute.Libraries }
+            )
+        }
+        SettingsRoute.Libraries -> {
+            LibrariesScreen(
+                onBackClick = { currentRoute = SettingsRoute.About }
             )
         }
     }
