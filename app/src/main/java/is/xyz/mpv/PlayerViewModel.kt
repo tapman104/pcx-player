@@ -131,8 +131,7 @@ class PlayerViewModel(
         }
     }
 
-    private val _playbackProgress = MutableStateFlow(PlaybackProgress())
-    val playbackProgress: StateFlow<PlaybackProgress> = _playbackProgress.asStateFlow()
+    val playbackProgress: StateFlow<PlaybackProgress> = eventHandler.playbackProgress
 
     private val _playbackSpeed = MutableStateFlow(1f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
@@ -150,7 +149,6 @@ class PlayerViewModel(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, _videoZoomState.value.isFitScreenEnabled)
 
-    private val _videoGeometry = MutableStateFlow(VideoGeometry())
     private val _orientationOverride = MutableStateFlow<OrientationMode?>(null)
 
     /**
@@ -160,7 +158,7 @@ class PlayerViewModel(
      */
     val orientationState: StateFlow<OrientationState> = combine(
         preferencesRepository.orientationMode,
-        _videoGeometry,
+        eventHandler.videoGeometry,
         _orientationOverride,
     ) { mode, geometry, override ->
         OrientationState(
@@ -188,17 +186,6 @@ class PlayerViewModel(
     init {
         AppLogger.i(TAG, "PlayerViewModel initialized")
         MPVLib.addLogObserver(logObserver)
-        scope.launch {
-            eventHandler.videoGeometry.collect { geometry ->
-                Log.i(TAG, "Geometry changed: ${geometry.width}x${geometry.height}, rot=${geometry.rotationDegrees}")
-                _videoGeometry.value = geometry
-            }
-        }
-        scope.launch {
-            eventHandler.playbackProgress.collect { progress ->
-                _playbackProgress.value = progress
-            }
-        }
         // FIX #3: Combine engine.status with committed subtitle and language preferences to re-apply on preference emission when Ready
         scope.launch {
             combine(
@@ -222,28 +209,42 @@ class PlayerViewModel(
         // file's own track metadata carries a matching language tag — no fallback
         // chain needed, let mpv's own selection (or the match in (B)) handle it.
         scope.launch {
-            combine(engine.status, preferredAudioLang) { s, lang -> s to lang }
-                .distinctUntilChanged()
-                .collect { (status, lang) ->
+            combine(engine.status, preferredAudioLang, eventHandler.trackState) { status, lang, trackState ->
+                Triple(status, lang, trackState)
+            }
+                .distinctUntilChanged { old, new ->
+                    old.first == new.first &&
+                        old.second == new.second &&
+                        old.third.audioTracks == new.third.audioTracks &&
+                        old.third.selectedAudioId == new.third.selectedAudioId
+                }
+                .collect { (status, lang, trackState) ->
                     if (status is EngineStatus.Ready && lang != null) {
-                        val matchingTrack = eventHandler.trackState.value.audioTracks.firstOrNull { track ->
+                        val matchingTrack = trackState.audioTracks.firstOrNull { track ->
                             matchesLanguage(track.lang, lang)
                         }
-                        if (matchingTrack != null) {
+                        if (matchingTrack != null && matchingTrack.id != trackState.selectedAudioId) {
                             engine.selectAudioTrack(matchingTrack.id)
                         }
                     }
                 }
         }
         scope.launch {
-            combine(engine.status, preferredSubtitleLang) { s, lang -> s to lang }
-                .distinctUntilChanged()
-                .collect { (status, lang) ->
+            combine(engine.status, preferredSubtitleLang, eventHandler.trackState) { status, lang, trackState ->
+                Triple(status, lang, trackState)
+            }
+                .distinctUntilChanged { old, new ->
+                    old.first == new.first &&
+                        old.second == new.second &&
+                        old.third.subtitleTracks == new.third.subtitleTracks &&
+                        old.third.selectedSubtitleId == new.third.selectedSubtitleId
+                }
+                .collect { (status, lang, trackState) ->
                     if (status is EngineStatus.Ready && lang != null) {
-                        val matchingTrack = eventHandler.trackState.value.subtitleTracks.firstOrNull { track ->
+                        val matchingTrack = trackState.subtitleTracks.firstOrNull { track ->
                             matchesLanguage(track.lang, lang)
                         }
-                        if (matchingTrack != null) {
+                        if (matchingTrack != null && matchingTrack.id != trackState.selectedSubtitleId) {
                             engine.selectSubtitleTrack(matchingTrack.id)
                         }
                     }
@@ -310,7 +311,6 @@ class PlayerViewModel(
         Log.i(TAG, "loadFile: name=$name")
         AppLogger.i(TAG, "Loading file: $name")
         _explicitFileName.value = name
-        _playbackProgress.value = PlaybackProgress()
         _playbackSpeed.value = 1f
         _videoZoomState.value = VideoZoomState()
         _orientationOverride.value = null

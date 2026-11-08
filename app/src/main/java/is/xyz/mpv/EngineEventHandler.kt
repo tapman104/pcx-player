@@ -75,14 +75,19 @@ class EngineEventHandler : MPVLib.EventObserver {
     val playbackProgress: StateFlow<PlaybackProgress> = _playbackProgress.asStateFlow()
     val progress: StateFlow<PlaybackProgress> get() = playbackProgress
 
+    private val lock = Any()
+
     var currentGeometry: VideoGeometry = VideoGeometry()
-        private set
+        get() = synchronized(lock) { field }
+        private set(value) = synchronized(lock) { field = value }
 
     var currentPositionSec: Double = 0.0
-        private set
+        get() = synchronized(lock) { field }
+        private set(value) = synchronized(lock) { field = value }
 
     var currentDurationSec: Double = 0.0
-        private set
+        get() = synchronized(lock) { field }
+        private set(value) = synchronized(lock) { field = value }
 
     override fun eventProperty(property: String, value: MPVNode) {
         if (property == "track-list") {
@@ -125,13 +130,16 @@ class EngineEventHandler : MPVLib.EventObserver {
      * Returns true if the property was consumed (was a geometry property).
      */
     fun onPropertyLong(property: String, value: Long): Boolean {
-        val next = when (property) {
-            "width" -> currentGeometry.copy(width = value.toInt())
-            "height" -> currentGeometry.copy(height = value.toInt())
-            "video-rotate" -> currentGeometry.copy(rotationDegrees = value.toInt())
-            else -> return false
+        val next = synchronized(lock) {
+            val updated = when (property) {
+                "width" -> currentGeometry.copy(width = value.toInt())
+                "height" -> currentGeometry.copy(height = value.toInt())
+                "video-rotate" -> currentGeometry.copy(rotationDegrees = value.toInt())
+                else -> return false
+            }
+            currentGeometry = updated
+            updated
         }
-        currentGeometry = next
         _videoGeometry.value = next
         onVideoGeometryChanged?.invoke(next)
         return true
@@ -143,30 +151,36 @@ class EngineEventHandler : MPVLib.EventObserver {
      * Returns true if the property was consumed.
      */
     fun onPropertyDouble(property: String, value: Double): Boolean {
-        when (property) {
-            "time-pos" -> currentPositionSec = value
-            "duration" -> currentDurationSec = value
-            else -> return false
+        val next = synchronized(lock) {
+            when (property) {
+                "time-pos" -> currentPositionSec = value
+                "duration" -> currentDurationSec = value
+                else -> return false
+            }
+            PlaybackProgress(currentPositionSec, currentDurationSec)
         }
-        val next = PlaybackProgress(currentPositionSec, currentDurationSec)
         _playbackProgress.value = next
-        onPlaybackProgressChanged?.invoke(currentPositionSec, currentDurationSec)
+        onPlaybackProgressChanged?.invoke(next.positionSec, next.durationSec)
         return true
     }
 
     /** Reset geometry when a new file starts loading, so stale dims aren't briefly reused. */
     fun clearGeometry() {
         val reset = VideoGeometry()
-        currentGeometry = reset
+        synchronized(lock) {
+            currentGeometry = reset
+        }
         _videoGeometry.value = reset
         onVideoGeometryChanged?.invoke(reset)
     }
 
     /** Reset progress when a new file starts loading. */
     fun clearProgress() {
-        currentPositionSec = 0.0
-        currentDurationSec = 0.0
         val reset = PlaybackProgress(0.0, 0.0)
+        synchronized(lock) {
+            currentPositionSec = 0.0
+            currentDurationSec = 0.0
+        }
         _playbackProgress.value = reset
         onPlaybackProgressChanged?.invoke(0.0, 0.0)
     }
@@ -174,9 +188,11 @@ class EngineEventHandler : MPVLib.EventObserver {
     fun reset() {
         Log.d(TAG, "Resetting track, geometry, and playback state")
         _trackState.value = TrackState()
-        currentGeometry = VideoGeometry()
-        currentPositionSec = 0.0
-        currentDurationSec = 0.0
+        synchronized(lock) {
+            currentGeometry = VideoGeometry()
+            currentPositionSec = 0.0
+            currentDurationSec = 0.0
+        }
         _videoGeometry.value = VideoGeometry()
         _playbackProgress.value = PlaybackProgress()
     }

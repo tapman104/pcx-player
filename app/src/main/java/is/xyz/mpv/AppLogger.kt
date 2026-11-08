@@ -33,10 +33,23 @@ object AppLogger {
     private const val MAX_FILE_SIZE = 2 * 1024 * 1024L // 2MB
     private const val LOG_FILE_NAME = "app.log"
     private const val OLD_LOG_FILE_NAME = "app.log.old"
+    private const val FLUSH_INTERVAL_WRITES = 50
+    private const val MAX_PENDING_DISK_WRITES = 1000
 
     private val lock = Any()
     private val entries = ArrayDeque<LogEntry>(MAX_CAPACITY)
     private var nextId = 0L
+
+    private data class DiskWriteEntry(
+        val timestamp: Long,
+        val severity: LogSeverity,
+        val tag: String,
+        val message: String,
+    )
+    private val pendingDiskEntries = ArrayDeque<DiskWriteEntry>(MAX_PENDING_DISK_WRITES)
+    private var isWriteScheduled = false
+    private var droppedEntriesCount = 0
+    private var writesSinceFlush = 0
 
     @Volatile
     private var logDir: File? = null
@@ -88,6 +101,8 @@ object AppLogger {
             logDir = dir
             sessionStartTime = System.currentTimeMillis()
             entries.clear()
+            pendingDiskEntries.clear()
+            droppedEntriesCount = 0
             nextId = 0L
         }
         try {
@@ -96,6 +111,7 @@ object AppLogger {
                     logWriter?.close()
                 } catch (_: Exception) {}
                 logWriter = null
+                writesSinceFlush = 0
             }.get()
         } catch (_: Exception) {}
 
@@ -146,6 +162,7 @@ object AppLogger {
     fun log(severity: LogSeverity, tag: String, message: String) {
         val sanitized = redact(message)
         val timestamp = System.currentTimeMillis()
+        var scheduleWrite = false
         synchronized(lock) {
             if (entries.size >= MAX_CAPACITY) {
                 entries.removeFirst()
@@ -159,13 +176,57 @@ object AppLogger {
                     message = sanitized
                 )
             )
-        }
-        try {
-            diskExecutor.execute {
-                writeToDisk(timestamp, severity, tag, sanitized)
+
+            val isFull = pendingDiskEntries.size >= MAX_PENDING_DISK_WRITES
+            val isError = severity == LogSeverity.ERROR
+
+            if (isFull) {
+                if (!isError) {
+                    droppedEntriesCount++
+                    return
+                } else {
+                    val oldestNonErrorIndex = pendingDiskEntries.indexOfFirst { it.severity != LogSeverity.ERROR }
+                    if (oldestNonErrorIndex != -1) {
+                        pendingDiskEntries.removeAt(oldestNonErrorIndex)
+                    } else {
+                        pendingDiskEntries.removeFirst()
+                    }
+                    droppedEntriesCount++
+                    pendingDiskEntries.addLast(DiskWriteEntry(timestamp, severity, tag, sanitized))
+                }
+            } else {
+                pendingDiskEntries.addLast(DiskWriteEntry(timestamp, severity, tag, sanitized))
             }
-        } catch (_: RejectedExecutionException) {
-            // Executor shut down
+
+            if (!isWriteScheduled) {
+                isWriteScheduled = true
+                scheduleWrite = true
+            }
+        }
+
+        if (scheduleWrite) {
+            try {
+                diskExecutor.execute {
+                    drainPendingWrites()
+                }
+            } catch (_: RejectedExecutionException) {
+                synchronized(lock) {
+                    isWriteScheduled = false
+                }
+            }
+        }
+    }
+
+    private fun drainPendingWrites() {
+        while (true) {
+            val entry = synchronized(lock) {
+                if (pendingDiskEntries.isEmpty()) {
+                    isWriteScheduled = false
+                    return
+                }
+                pendingDiskEntries.removeFirst()
+            }
+            writeToDisk(entry.timestamp, entry.severity, entry.tag, entry.message)
         }
     }
 
@@ -199,7 +260,11 @@ object AppLogger {
             logWriter?.let { writer ->
                 writer.write("[$timestampStr] [${severity.name}] [$tag] $message")
                 writer.newLine()
-                writer.flush()
+                writesSinceFlush++
+                if (writesSinceFlush >= FLUSH_INTERVAL_WRITES) {
+                    writer.flush()
+                    writesSinceFlush = 0
+                }
             }
         } catch (_: Exception) {
             // Keep silent per constraints
@@ -243,9 +308,13 @@ object AppLogger {
         entries.toList()
     }
 
+    fun getDroppedEntryCount(): Int = synchronized(lock) { droppedEntriesCount }
+    fun getDroppedEntries(): Int = getDroppedEntryCount()
+
     fun clear() {
         synchronized(lock) {
             entries.clear()
+            pendingDiskEntries.clear()
             sessionStartTime = System.currentTimeMillis()
         }
         try {
@@ -254,6 +323,7 @@ object AppLogger {
                     logWriter?.close()
                 } catch (_: Exception) {}
                 logWriter = null
+                writesSinceFlush = 0
 
                 val dir = logDir
                 if (dir != null) {
@@ -333,6 +403,7 @@ object AppLogger {
         return try {
             diskExecutor.submit(Callable {
                 try {
+                    drainPendingWrites()
                     logWriter?.flush()
                     val oldFile = File(dir, OLD_LOG_FILE_NAME)
                     val currentFile = File(dir, LOG_FILE_NAME)
@@ -381,7 +452,9 @@ object AppLogger {
         try {
             diskExecutor.submit {
                 try {
+                    drainPendingWrites()
                     logWriter?.flush()
+                    writesSinceFlush = 0
                 } catch (_: Exception) {}
             }.get()
         } catch (_: Exception) {}
@@ -390,6 +463,7 @@ object AppLogger {
     fun formatLogsForExport(): String {
         return try {
             diskExecutor.submit(Callable {
+                drainPendingWrites()
                 val dir = logDir
                 if (dir != null) {
                     try {

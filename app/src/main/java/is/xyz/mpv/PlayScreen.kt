@@ -83,7 +83,6 @@ fun PlayScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val orientationState by viewModel.orientationState.collectAsState()
-    val videoZoomState by viewModel.videoZoomState.collectAsState()
     val subFontSize by viewModel.subFontSize.collectAsState()
     val subPos by viewModel.subPos.collectAsState()
     val context = LocalContext.current
@@ -95,31 +94,30 @@ fun PlayScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var activeDialog by remember { mutableStateOf(TrackDialogType.NONE) }
     var indicator by remember { mutableStateOf<GestureIndicator?>(null) }
-    var indicatorRevision by remember { mutableStateOf(0) }
     val isLongPressActive = remember { mutableStateOf(false) }
     var doubleTapAccumulatedDelta by remember { mutableStateOf(0.0) }
     var seekStartSec by remember { mutableStateOf(0.0) }
     var seekAccumulatedDelta by remember { mutableStateOf(0.0) }
     val coroutineScope = rememberCoroutineScope()
-    var hideJob by remember { mutableStateOf<Job?>(null) }
+    val hideJob = remember { JobHolder() }
     var topBarHeight by remember { mutableStateOf(0.dp) }
     var bottomBarHeight by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
 
     fun resetHideTimer() {
         if (isLocked) return
-        hideJob?.cancel()
-        hideJob = coroutineScope.launch {
+        hideJob.job?.cancel()
+        hideJob.job = coroutineScope.launch {
             delay(5_000)
             controlsVisible = false
         }
     }
 
-    LaunchedEffect(indicatorRevision, isLongPressActive.value) {
+    LaunchedEffect(indicator, isLongPressActive.value) {
         if (indicator != null) {
-            hideJob?.cancel()
+            hideJob.job?.cancel()
             controlsVisible = false
-            if (isLongPressActive.value) {
+            if (isLongPressActive.value || indicator is GestureIndicator.Zoom) {
                 return@LaunchedEffect
             }
             val timeoutMs = if (indicator is GestureIndicator.Seek && (indicator as GestureIndicator.Seek).source == SeekSource.DOUBLE_TAP) {
@@ -150,7 +148,7 @@ fun PlayScreen(
 
     LaunchedEffect(activeDialog) {
         if (activeDialog != TrackDialogType.NONE) {
-            hideJob?.cancel()
+            hideJob.job?.cancel()
         }
     }
 
@@ -227,7 +225,6 @@ fun PlayScreen(
                                     targetPositionSec = target,
                                     source = SeekSource.DOUBLE_TAP
                                 )
-                                indicatorRevision++
                                 viewModel.seekBy(delta)
                             }
                             SeekSource.SWIPE -> {
@@ -239,7 +236,6 @@ fun PlayScreen(
                                     targetPositionSec = target,
                                     source = SeekSource.SWIPE
                                 )
-                                indicatorRevision++
                                 viewModel.seekBy(delta)
                             }
                         }
@@ -250,7 +246,6 @@ fun PlayScreen(
                             viewModel.setSpeed(it.toDouble())
                             if (isLongPressActive.value) {
                                 indicator = GestureIndicator.Speed(it)
-                                indicatorRevision++
                             }
                         }
                     },
@@ -258,8 +253,9 @@ fun PlayScreen(
                         {
                             doubleTapAccumulatedDelta = 0.0
                             viewModel.zoomBy(it)
-                            indicator = GestureIndicator.Zoom(videoZoomState.zoom)
-                            indicatorRevision++
+                            if (indicator !is GestureIndicator.Zoom) {
+                                indicator = GestureIndicator.Zoom(1f)
+                            }
                         }
                     },
                     onDoubleTap = if (isLocked) { {} } else {
@@ -272,12 +268,10 @@ fun PlayScreen(
                     onVolumeChange = if (isLocked) null else { level, max ->
                         doubleTapAccumulatedDelta = 0.0
                         indicator = GestureIndicator.Volume(level, max)
-                        indicatorRevision++
                     },
                     onBrightnessChange = if (isLocked) null else { level ->
                         doubleTapAccumulatedDelta = 0.0
                         indicator = GestureIndicator.Brightness(level)
-                        indicatorRevision++
                     },
                 )
         )
@@ -360,15 +354,15 @@ fun PlayScreen(
                     }
                 },
                 onAudioTrackClick = {
-                    hideJob?.cancel()
+                    hideJob.job?.cancel()
                     activeDialog = TrackDialogType.AUDIO
                 },
                 onSubtitleTrackClick = {
-                    hideJob?.cancel()
+                    hideJob.job?.cancel()
                     activeDialog = TrackDialogType.SUBTITLE
                 },
                 onMoreClick = {
-                    hideJob?.cancel()
+                    hideJob.job?.cancel()
                     activeDialog = TrackDialogType.MORE_OPTIONS
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -392,14 +386,14 @@ fun PlayScreen(
             PlayerBottomBarHost(
                 playbackProgressFlow = viewModel.playbackProgress,
                 isEnabled = uiState.isEngineReady,
-                isFitScreenEnabled = videoZoomState.isFitScreenEnabled,
+                isFitScreenEnabledFlow = viewModel.isFitScreenEnabled,
                 onSeek = { pos ->
                     viewModel.seekTo(pos)
                     controlsVisible = true
                     resetHideTimer()
                 },
                 onSeekStarted = {
-                    hideJob?.cancel()
+                    hideJob.job?.cancel()
                 },
                 onRotateClick = {
                     viewModel.toggleOrientationOverride { configuration.orientation }
@@ -460,8 +454,12 @@ fun PlayScreen(
             is GestureIndicator.Speed -> Alignment.TopCenter to PaddingValues(top = 80.dp)
             else -> Alignment.Center to PaddingValues(0.dp)
         }
-        GestureIndicatorOverlay(
+        GestureIndicatorHost(
             indicator = if (isLocked) null else indicator,
+            currentZoomFlow = viewModel.currentZoom,
+            onDismissZoom = {
+                indicator = null
+            },
             modifier = Modifier.align(indicatorAlignment).padding(indicatorPadding)
         )
         AudioTrackSheet(
@@ -512,7 +510,7 @@ fun PlayScreen(
                 lockControlsVisible = false
                 controlsVisible = false
                 activeDialog = TrackDialogType.NONE
-                hideJob?.cancel()
+                hideJob.job?.cancel()
             },
             onPipModeClick = {
                 // TODO: implement
@@ -571,31 +569,91 @@ fun PlayScreen(
 }
 
 /**
- * Narrow collection point for high-frequency playback progress.
- * Only this wrapper (and PlayerBottomBar) recomposes on position ticks;
+ * Narrow collection point for high-frequency playback progress and fit-screen state.
+ * Only this wrapper (and PlayerBottomBar) recomposes on position ticks or fit-screen toggles;
  * PlayScreen, VideoSurface, and PlayerTopBar do not.
  */
 @Composable
 private fun PlayerBottomBarHost(
     playbackProgressFlow: StateFlow<PlaybackProgress>,
     isEnabled: Boolean,
-    isFitScreenEnabled: Boolean,
+    isFitScreenEnabledFlow: StateFlow<Boolean>,
     onSeek: (Double) -> Unit,
     onSeekStarted: (() -> Unit)? = null,
     onRotateClick: (() -> Unit)? = null,
     onFitScreenClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val progress by playbackProgressFlow.collectAsState()
+    val isFitScreenEnabled by isFitScreenEnabledFlow.collectAsState()
+
+    var progress by remember { mutableStateOf(playbackProgressFlow.value) }
+    var isSeeking by remember { mutableStateOf(false) }
+    var seekVersion by remember { mutableStateOf(0) }
+
+    LaunchedEffect(seekVersion) {
+        if (seekVersion > 0) {
+            // Post-seek delay: prevent stale engine progress from overwriting user seek position
+            delay(1000L)
+        }
+        while (true) {
+            if (!isSeeking) {
+                progress = playbackProgressFlow.value
+            }
+            delay(1000L)
+        }
+    }
+
     PlayerBottomBar(
         isEnabled = isEnabled,
         positionSec = progress.positionSec,
         durationSec = progress.durationSec,
-        onSeek = onSeek,
-        onSeekStarted = onSeekStarted,
+        onSeek = { targetPos ->
+            isSeeking = false
+            progress = progress.copy(positionSec = targetPos)
+            seekVersion++
+            onSeek(targetPos)
+        },
+        onSeekStarted = {
+            isSeeking = true
+            onSeekStarted?.invoke()
+        },
         onRotateClick = onRotateClick,
         isFitScreenEnabled = isFitScreenEnabled,
         onFitScreenClick = onFitScreenClick,
         modifier = modifier
     )
 }
+
+/**
+ * Narrow collection point for zoom gesture indicator.
+ * Observes currentZoom locally so pinch-zoom updates do not trigger recomposition of PlayScreen.
+ */
+@Composable
+private fun GestureIndicatorHost(
+    indicator: GestureIndicator?,
+    currentZoomFlow: StateFlow<Float>,
+    onDismissZoom: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentZoom by currentZoomFlow.collectAsState()
+
+    LaunchedEffect(currentZoom, indicator is GestureIndicator.Zoom) {
+        if (indicator is GestureIndicator.Zoom) {
+            delay(600L)
+            onDismissZoom()
+        }
+    }
+
+    val effectiveIndicator = if (indicator is GestureIndicator.Zoom) {
+        GestureIndicator.Zoom(currentZoom)
+    } else {
+        indicator
+    }
+
+    GestureIndicatorOverlay(
+        indicator = effectiveIndicator,
+        modifier = modifier
+    )
+}
+
+private class JobHolder(var job: Job? = null)

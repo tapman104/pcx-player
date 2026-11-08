@@ -11,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.input.pointer.positionChanged
@@ -124,6 +123,7 @@ fun Modifier.playerGestureHandler(
         .pointerInput(window, audioManager, seekSecondsPerFullWidth) {
             awaitEachGesture {
                 val edgePx = with(density) { 24.dp.toPx() }
+                val seekThresholdPx = with(density) { 8.dp.toPx() }
                 var mode = GestureMode.UNDECIDED
                 var totalPanX = 0f
                 var totalPanY = 0f
@@ -145,7 +145,6 @@ fun Modifier.playerGestureHandler(
 
                     val pan = event.calculatePan()
                     val zoom = event.calculateZoom()
-                    val centroid = event.calculateCentroid(useCurrent = true)
 
                     // A two-finger gesture takes priority over one-finger movement.
                     if (pressedCount >= 2) {
@@ -217,11 +216,13 @@ fun Modifier.playerGestureHandler(
                             GestureMode.SEEK -> {
                                 val width = size.width.toFloat().coerceAtLeast(1f)
                                 val deltaX = totalPanX - lastAppliedPanX
-                                currentOnSeekBy.value(
-                                    (deltaX / width * seekSecondsPerFullWidth).toDouble(),
-                                    SeekSource.SWIPE
-                                )
-                                lastAppliedPanX = totalPanX
+                                if (abs(deltaX) >= seekThresholdPx) {
+                                    currentOnSeekBy.value(
+                                        (deltaX / width * seekSecondsPerFullWidth).toDouble(),
+                                        SeekSource.SWIPE
+                                    )
+                                    lastAppliedPanX = totalPanX
+                                }
                             }
 
                             GestureMode.VOLUME -> {
@@ -250,6 +251,18 @@ fun Modifier.playerGestureHandler(
                         event.changes.forEach { if (it.positionChanged()) it.consume() }
                     }
                 } while (event.changes.any { it.pressed })
+
+                if (mode == GestureMode.SEEK && !currentIsGestureLocked.value) {
+                    val deltaX = totalPanX - lastAppliedPanX
+                    if (abs(deltaX) > 0.001f) {
+                        val width = size.width.toFloat().coerceAtLeast(1f)
+                        currentOnSeekBy.value(
+                            (deltaX / width * seekSecondsPerFullWidth).toDouble(),
+                            SeekSource.SWIPE
+                        )
+                        lastAppliedPanX = totalPanX
+                    }
+                }
             }
         }
 }
