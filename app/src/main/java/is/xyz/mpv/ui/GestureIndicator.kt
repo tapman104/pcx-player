@@ -5,7 +5,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -31,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
@@ -52,23 +55,48 @@ sealed interface GestureIndicator {
     data class Zoom(val level: Float) : GestureIndicator
 }
 
+fun alignmentFor(
+    indicator: GestureIndicator?,
+    doubleTapSidePadding: Dp = 0.dp
+): Pair<Alignment, PaddingValues> = when (indicator) {
+    is GestureIndicator.Brightness -> Alignment.CenterEnd to PaddingValues(end = 24.dp)
+    is GestureIndicator.Volume -> Alignment.CenterStart to PaddingValues(start = 24.dp)
+    is GestureIndicator.Seek -> {
+        if (indicator.source == SeekSource.DOUBLE_TAP) {
+            if (indicator.deltaSec < 0) {
+                Alignment.CenterStart to PaddingValues(start = doubleTapSidePadding)
+            } else {
+                Alignment.CenterEnd to PaddingValues(end = doubleTapSidePadding)
+            }
+        } else {
+            Alignment.Center to PaddingValues(0.dp)
+        }
+    }
+    is GestureIndicator.Speed -> Alignment.TopCenter to PaddingValues(top = 80.dp)
+    is GestureIndicator.Zoom, null -> Alignment.Center to PaddingValues(0.dp)
+}
+
 @Composable
-fun GestureIndicatorOverlay(
+fun BoxScope.GestureIndicatorOverlay(
     indicator: GestureIndicator?,
     modifier: Modifier = Modifier,
+    doubleTapSidePadding: Dp = 0.dp,
 ) {
     var lastIndicator by remember { mutableStateOf<GestureIndicator?>(null) }
     if (indicator != null) {
         lastIndicator = indicator
     }
 
+    val current = indicator ?: lastIndicator
+    val (indicatorAlignment, indicatorPadding) = alignmentFor(current, doubleTapSidePadding)
+
     AnimatedVisibility(
         visible = indicator != null,
         enter = fadeIn(),
         exit = fadeOut(),
-        modifier = modifier,
+        modifier = modifier.align(indicatorAlignment).padding(indicatorPadding),
     ) {
-        val current = indicator ?: lastIndicator ?: return@AnimatedVisibility
+        val current = current ?: return@AnimatedVisibility
 
         if (current is GestureIndicator.Seek) {
             when (current.source) {

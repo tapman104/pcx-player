@@ -439,3 +439,21 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
     refactor(engine): remove redundant clearGeometry and clearProgress calls in playFile
 
  *feat(player): add playback controls lock with slide-to-unlock
+
+
+
+
+
+
+
+ **08.11.2026
+ 
+ *fix(player): implement audit items 10-13, thread safety, and gesture seeking
+
+- AppLogger: enforce strict 1,000 pending-write hard ceiling with preferential ERROR retention, dropped-entry counting, and unified periodic batch flush
+- PlayScreen: sample seek bar progress ~1s while visible, handle user seek immediately without stale overwrite, and isolate zoom and fit-screen state observation to child hosts
+- PlayerViewModel: prevent redundant track selection when already selected and narrow distinctUntilChanged to ignore unrelated TrackState changes
+- EngineEventHandler: synchronize geometry and progress getters/setters under internal lock
+- PlayerGestureHandler: add swipe seek threshold and commit final swipe seek delta
+
+*fix: prevent gesture indicator position jump during fade-out

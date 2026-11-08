@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,6 +47,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import `is`.xyz.mpv.ui.AudioTrackSheet
@@ -437,30 +439,13 @@ fun PlayScreen(
         }
         val doubleTapSidePadding = pillarboxPadding + (visibleVideoWidth * 0.11f)
 
-        val (indicatorAlignment, indicatorPadding) = when (val ind = indicator) {
-            is GestureIndicator.Brightness -> Alignment.CenterEnd to PaddingValues(end = 24.dp)
-            is GestureIndicator.Volume -> Alignment.CenterStart to PaddingValues(start = 24.dp)
-            is GestureIndicator.Seek -> {
-                if (ind.source == SeekSource.DOUBLE_TAP) {
-                    if (ind.deltaSec < 0) {
-                        Alignment.CenterStart to PaddingValues(start = doubleTapSidePadding)
-                    } else {
-                        Alignment.CenterEnd to PaddingValues(end = doubleTapSidePadding)
-                    }
-                } else {
-                    Alignment.Center to PaddingValues(0.dp)
-                }
-            }
-            is GestureIndicator.Speed -> Alignment.TopCenter to PaddingValues(top = 80.dp)
-            else -> Alignment.Center to PaddingValues(0.dp)
-        }
         GestureIndicatorHost(
             indicator = if (isLocked) null else indicator,
             currentZoomFlow = viewModel.currentZoom,
             onDismissZoom = {
                 indicator = null
             },
-            modifier = Modifier.align(indicatorAlignment).padding(indicatorPadding)
+            doubleTapSidePadding = doubleTapSidePadding
         )
         AudioTrackSheet(
             visible = !isLocked && activeDialog == TrackDialogType.AUDIO,
@@ -629,10 +614,11 @@ private fun PlayerBottomBarHost(
  * Observes currentZoom locally so pinch-zoom updates do not trigger recomposition of PlayScreen.
  */
 @Composable
-private fun GestureIndicatorHost(
+private fun BoxScope.GestureIndicatorHost(
     indicator: GestureIndicator?,
     currentZoomFlow: StateFlow<Float>,
     onDismissZoom: () -> Unit,
+    doubleTapSidePadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
     val currentZoom by currentZoomFlow.collectAsState()
@@ -652,6 +638,7 @@ private fun GestureIndicatorHost(
 
     GestureIndicatorOverlay(
         indicator = effectiveIndicator,
+        doubleTapSidePadding = doubleTapSidePadding,
         modifier = modifier
     )
 }
