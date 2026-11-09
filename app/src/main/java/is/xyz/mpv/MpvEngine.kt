@@ -124,8 +124,6 @@ open class MpvEngine(
             // Engine is now Ready; apply pending surface configuration and load any pending file.
             flushPending()
         } catch (e: Throwable) {
-            eventHandler.onVideoGeometryChanged = null
-            eventHandler.onPlaybackProgressChanged = null
             pendingSurface = null
             pendingFilePath = null
             pendingSurfaceSize = null
@@ -200,7 +198,6 @@ open class MpvEngine(
         MPVLib.attachSurface(surface)
         surfaceAttachmentState = SurfaceAttachmentState.Attached
         // This forces mpv to render subs/osd/whatever into our surface even if it would ordinarily not
-        MPVLib.setOptionString("force-window", "yes")
         MPVLib.setPropertyString("force-window", "yes")
 
         // We disable video output when the context disappears, enable it back unconditionally before any file load
@@ -253,8 +250,6 @@ open class MpvEngine(
         if (!_status.compareAndSet(currentStatus, EngineStatus.Destroying)) {
             return
         }
-        eventHandler.onVideoGeometryChanged = null
-        eventHandler.onPlaybackProgressChanged = null
         pendingSurface = null
         pendingFilePath = null
         pendingSurfaceSize = null
@@ -281,27 +276,20 @@ open class MpvEngine(
      */
     private fun performDestruction(
         successStatus: EngineStatus = EngineStatus.NotStarted,
-    ): Throwable? {
+    ) {
         MPVLib.removeObserver(this)
         MPVLib.removeObserver(eventHandler)
 
-        val destroyError = try {
+        try {
             MPVLib.destroy()
-            null
+            eventHandler.reset()
+            surfaceAttachmentState = SurfaceAttachmentState.Detached
+            _status.value = successStatus
         } catch (e: Throwable) {
             val reason = e.message ?: "Unknown destruction error"
             Log.e(TAG, "Error destroying MPVLib: $reason", e)
-            e
-        }
-
-        if (destroyError == null) {
-            eventHandler.reset()
-            _status.value = successStatus
-        } else {
-            val reason = destroyError.message ?: "Unknown destruction error"
             _status.value = EngineStatus.DestroyFailed(reason)
         }
-        return destroyError
     }
 
     protected open fun initOptions() {
@@ -451,7 +439,6 @@ open class MpvEngine(
     fun setVo(vo: String) {
         voInUse = vo
         if (isReady) {
-            MPVLib.setOptionString("vo", vo)
             MPVLib.setPropertyString("vo", vo)
         }
     }

@@ -58,22 +58,14 @@ data class TrackState(
  */
 class EngineEventHandler : MPVLib.EventObserver {
 
-    /** Called whenever mpv reports a change to width, height, or rotation. */
-    var onVideoGeometryChanged: ((VideoGeometry) -> Unit)? = null
-
-    /** Called whenever mpv reports a change to position or duration. */
-    var onPlaybackProgressChanged: ((positionSec: Double, durationSec: Double) -> Unit)? = null
-
     private val _trackState = MutableStateFlow(TrackState())
     val trackState: StateFlow<TrackState> = _trackState.asStateFlow()
 
     private val _videoGeometry = MutableStateFlow(VideoGeometry())
     val videoGeometry: StateFlow<VideoGeometry> = _videoGeometry.asStateFlow()
-    val geometry: StateFlow<VideoGeometry> get() = videoGeometry
 
     private val _playbackProgress = MutableStateFlow(PlaybackProgress())
     val playbackProgress: StateFlow<PlaybackProgress> = _playbackProgress.asStateFlow()
-    val progress: StateFlow<PlaybackProgress> get() = playbackProgress
 
     private val lock = Any()
 
@@ -141,7 +133,6 @@ class EngineEventHandler : MPVLib.EventObserver {
             updated
         }
         _videoGeometry.value = next
-        onVideoGeometryChanged?.invoke(next)
         return true
     }
 
@@ -160,7 +151,6 @@ class EngineEventHandler : MPVLib.EventObserver {
             PlaybackProgress(currentPositionSec, currentDurationSec)
         }
         _playbackProgress.value = next
-        onPlaybackProgressChanged?.invoke(next.positionSec, next.durationSec)
         return true
     }
 
@@ -171,7 +161,6 @@ class EngineEventHandler : MPVLib.EventObserver {
             currentGeometry = reset
         }
         _videoGeometry.value = reset
-        onVideoGeometryChanged?.invoke(reset)
     }
 
     /** Reset progress when a new file starts loading. */
@@ -182,7 +171,6 @@ class EngineEventHandler : MPVLib.EventObserver {
             currentDurationSec = 0.0
         }
         _playbackProgress.value = reset
-        onPlaybackProgressChanged?.invoke(0.0, 0.0)
     }
 
     fun reset() {
