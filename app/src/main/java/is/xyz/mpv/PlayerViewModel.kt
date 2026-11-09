@@ -20,8 +20,9 @@ import kotlinx.coroutines.launch
 
 import android.net.Uri
 import com.potato.player.BuildConfig
+import `is`.xyz.mpv.state.VideoDisplayMode
+import `is`.xyz.mpv.state.VideoDisplayState
 import `is`.xyz.mpv.state.VideoTransform
-import `is`.xyz.mpv.state.VideoZoomState
 import `is`.xyz.mpv.ui.UriUtils
 
 // ---------------------------------------------------------------------------
@@ -56,9 +57,9 @@ private data class SubAndLangPrefs(
     val subLang: String?,
 )
 
-private data class EngineTransformState(
+private data class EngineDisplayState(
     val isReady: Boolean,
-    val transform: VideoTransform,
+    val displayState: VideoDisplayState,
     val geometry: VideoGeometry = VideoGeometry(),
 )
 
@@ -144,18 +145,18 @@ class PlayerViewModel(
     private val _playbackSpeed = MutableStateFlow(1f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
-    private val _videoZoomState = MutableStateFlow(VideoZoomState())
-    val videoZoomState: StateFlow<VideoZoomState> = _videoZoomState.asStateFlow()
+    private val _videoDisplayState = MutableStateFlow(VideoDisplayState())
+    val videoDisplayState: StateFlow<VideoDisplayState> = _videoDisplayState.asStateFlow()
 
-    val currentZoom: StateFlow<Float> = _videoZoomState
-        .map { it.zoom }
+    val currentZoom: StateFlow<Float> = _videoDisplayState
+        .map { it.transform.zoom }
         .distinctUntilChanged()
-        .stateIn(scope, SharingStarted.Eagerly, _videoZoomState.value.zoom)
+        .stateIn(scope, SharingStarted.Eagerly, _videoDisplayState.value.transform.zoom)
 
-    val isFitScreenEnabled: StateFlow<Boolean> = _videoZoomState
-        .map { it.isFitScreenEnabled }
+    val displayMode: StateFlow<VideoDisplayMode> = _videoDisplayState
+        .map { it.mode }
         .distinctUntilChanged()
-        .stateIn(scope, SharingStarted.Eagerly, _videoZoomState.value.isFitScreenEnabled)
+        .stateIn(scope, SharingStarted.Eagerly, _videoDisplayState.value.mode)
 
     private val _orientationOverride = MutableStateFlow<OrientationMode?>(null)
 
@@ -194,19 +195,19 @@ class PlayerViewModel(
     init {
         AppLogger.i(TAG, "PlayerViewModel initialized")
         MPVLib.addLogObserver(logObserver)
-        // Centralized collector applying video transform (zoom/pan) to MPV whenever the engine becomes Ready
+        // Centralized collector applying video transform (zoom/pan) and display mode to MPV whenever the engine becomes Ready
         scope.launch {
-            combine(engine.status, _videoZoomState, eventHandler.videoGeometry) { status, zoomState, geometry ->
-                EngineTransformState(
+            combine(engine.status, _videoDisplayState, eventHandler.videoGeometry) { status, displayState, geometry ->
+                EngineDisplayState(
                     isReady = status is EngineStatus.Ready,
-                    transform = zoomState.current,
+                    displayState = displayState,
                     geometry = geometry,
                 )
             }
                 .distinctUntilChanged()
                 .filter { it.isReady }
                 .collect { state ->
-                    engine.setVideoTransform(state.transform)
+                    engine.setVideoDisplayState(state.displayState)
                 }
         }
         // FIX #3: Combine engine.status with committed subtitle and language preferences to re-apply on preference emission when Ready
@@ -335,7 +336,7 @@ class PlayerViewModel(
         AppLogger.i(TAG, "Loading file: $name")
         _explicitFileName.value = name
         _playbackSpeed.value = 1f
-        _videoZoomState.value = VideoZoomState()
+        _videoDisplayState.value = VideoDisplayState()
         _orientationOverride.value = null
         // FIX #5: Set isLoadingNewFile true before calling engine.playFile
         _isLoadingNewFile.value = true
@@ -366,46 +367,24 @@ class PlayerViewModel(
 
     fun zoomBy(factor: Float) {
         if (!factor.isFinite() || factor <= 0f) return
-        val state = _videoZoomState.value
-        val baseZoom = if (state.isFitScreenEnabled) 1f else state.current.zoom
-        val nextZoom = (baseZoom * factor).coerceIn(0.5f, 4f)
-        val nextTransform = VideoTransform(
-            zoom = nextZoom,
-            panX = if (state.isFitScreenEnabled) 0.0 else state.current.panX,
-            panY = if (state.isFitScreenEnabled) 0.0 else state.current.panY,
-        )
-        _videoZoomState.value = VideoZoomState(
-            current = nextTransform,
-            savedForFitScreen = null,
-        )
-    }
-
-    fun enableFitScreen() {
-        val state = _videoZoomState.value
-        if (state.isFitScreenEnabled) return
-        val neutralTransform = VideoTransform()
-        _videoZoomState.value = VideoZoomState(
-            current = neutralTransform,
-            savedForFitScreen = state.current,
-        )
-    }
-
-    fun disableFitScreen() {
-        val state = _videoZoomState.value
-        if (!state.isFitScreenEnabled) return
-        val restoredTransform = state.savedForFitScreen ?: VideoTransform()
-        _videoZoomState.value = VideoZoomState(
-            current = restoredTransform,
-            savedForFitScreen = null,
-        )
-    }
-
-    fun toggleFitScreen() {
-        if (_videoZoomState.value.isFitScreenEnabled) {
-            disableFitScreen()
-        } else {
-            enableFitScreen()
+        val currentTransform = _videoDisplayState.value.transform
+        val nextZoom = (currentTransform.zoom * factor).coerceIn(0.5f, 4f)
+        _videoDisplayState.update { state ->
+            state.copy(
+                transform = state.transform.copy(zoom = nextZoom)
+            )
         }
+    }
+
+    fun toggleDisplayMode() {
+        val nextMode = when (_videoDisplayState.value.mode) {
+            VideoDisplayMode.ORIGINAL -> VideoDisplayMode.FULL_SCREEN
+            VideoDisplayMode.FULL_SCREEN -> VideoDisplayMode.ORIGINAL
+        }
+        _videoDisplayState.value = VideoDisplayState(
+            transform = VideoTransform(),
+            mode = nextMode,
+        )
     }
 
     fun selectAudioTrack(id: Int) {

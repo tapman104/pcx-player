@@ -3,6 +3,8 @@ package `is`.xyz.mpv
 import android.content.Context
 import android.util.Log
 import android.view.Surface
+import `is`.xyz.mpv.state.VideoDisplayMode
+import `is`.xyz.mpv.state.VideoDisplayState
 import `is`.xyz.mpv.state.VideoTransform
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -369,6 +371,28 @@ open class MpvEngine(
     fun setSpeed(speed: Double) {
         if (!isReady) return
         MPVLib.setPropertyDouble("speed", speed)
+    }
+
+    /**
+     * Apply video transform (zoom and pan) and display mode (panscan).
+     * Converts linear zoom to mpv's logarithmic video-zoom property (log2).
+     * Guarded by [isReady].
+     */
+    fun setVideoDisplayState(state: VideoDisplayState) {
+        if (!isReady) return
+        val mpvZoom = if (state.transform.zoom > 0f) {
+            kotlin.math.log2(state.transform.zoom.toDouble())
+        } else {
+            0.0
+        }
+        val panscan = when (state.mode) {
+            VideoDisplayMode.ORIGINAL -> 0.0
+            VideoDisplayMode.FULL_SCREEN -> 1.0
+        }
+        MPVLib.setPropertyDouble("video-zoom", mpvZoom)
+        MPVLib.setPropertyDouble("video-pan-x", state.transform.panX)
+        MPVLib.setPropertyDouble("video-pan-y", state.transform.panY)
+        MPVLib.setPropertyDouble("panscan", panscan)
     }
 
     /**

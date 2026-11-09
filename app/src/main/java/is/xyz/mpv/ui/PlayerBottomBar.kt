@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import `is`.xyz.mpv.state.VideoDisplayMode
 
 @Composable
 fun PlayerBottomBar(
@@ -28,8 +29,8 @@ fun PlayerBottomBar(
     onSeek: (Double) -> Unit,
     onSeekStarted: (() -> Unit)? = null,
     onRotateClick: (() -> Unit)? = null,
-    isFitScreenEnabled: Boolean = false,
-    onFitScreenClick: (() -> Unit)? = null,
+    displayMode: VideoDisplayMode = VideoDisplayMode.ORIGINAL,
+    onDisplayModeClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val brush = Brush.verticalGradient(
@@ -44,7 +45,7 @@ fun PlayerBottomBar(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            if (onRotateClick != null || onFitScreenClick != null) {
+            if (onRotateClick != null || onDisplayModeClick != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Start
@@ -58,12 +59,12 @@ fun PlayerBottomBar(
                             )
                         }
                     }
-                    if (onFitScreenClick != null) {
-                        IconButton(onClick = onFitScreenClick) {
+                    if (onDisplayModeClick != null) {
+                        IconButton(onClick = onDisplayModeClick) {
                             Icon(
                                 imageVector = Icons.Default.FitScreen,
-                                contentDescription = "Fit screen",
-                                tint = if (isFitScreenEnabled) MaterialTheme.colorScheme.primary else Color.White
+                                contentDescription = "Display mode",
+                                tint = if (displayMode == VideoDisplayMode.FULL_SCREEN) MaterialTheme.colorScheme.primary else Color.White
                             )
                         }
                     }

@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import `is`.xyz.mpv.state.VideoDisplayMode
 import `is`.xyz.mpv.ui.AudioTrackSheet
 import `is`.xyz.mpv.ui.GestureIndicator
 import `is`.xyz.mpv.ui.GestureIndicatorOverlay
@@ -406,7 +407,7 @@ fun PlayScreen(
             PlayerBottomBarHost(
                 playbackProgressFlow = viewModel.playbackProgress,
                 isEnabled = uiState.isEngineReady,
-                isFitScreenEnabledFlow = viewModel.isFitScreenEnabled,
+                displayModeFlow = viewModel.displayMode,
                 onSeek = { pos ->
                     viewModel.seekTo(pos)
                     controlsVisible = true
@@ -419,8 +420,8 @@ fun PlayScreen(
                     viewModel.toggleOrientationOverride { configuration.orientation }
                     resetHideTimer()
                 },
-                onFitScreenClick = {
-                    viewModel.toggleFitScreen()
+                onDisplayModeClick = {
+                    viewModel.toggleDisplayMode()
                     resetHideTimer()
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -572,22 +573,22 @@ fun PlayScreen(
 }
 
 /**
- * Narrow collection point for high-frequency playback progress and fit-screen state.
- * Only this wrapper (and PlayerBottomBar) recomposes on position ticks or fit-screen toggles;
+ * Narrow collection point for high-frequency playback progress and display-mode state.
+ * Only this wrapper (and PlayerBottomBar) recomposes on position ticks or display-mode toggles;
  * PlayScreen, VideoSurface, and PlayerTopBar do not.
  */
 @Composable
 private fun PlayerBottomBarHost(
     playbackProgressFlow: StateFlow<PlaybackProgress>,
     isEnabled: Boolean,
-    isFitScreenEnabledFlow: StateFlow<Boolean>,
+    displayModeFlow: StateFlow<VideoDisplayMode>,
     onSeek: (Double) -> Unit,
     onSeekStarted: (() -> Unit)? = null,
     onRotateClick: (() -> Unit)? = null,
-    onFitScreenClick: (() -> Unit)? = null,
+    onDisplayModeClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val isFitScreenEnabled by isFitScreenEnabledFlow.collectAsState()
+    val displayMode by displayModeFlow.collectAsState()
 
     var progress by remember { mutableStateOf(playbackProgressFlow.value) }
     var isSeeking by remember { mutableStateOf(false) }
@@ -621,8 +622,8 @@ private fun PlayerBottomBarHost(
             onSeekStarted?.invoke()
         },
         onRotateClick = onRotateClick,
-        isFitScreenEnabled = isFitScreenEnabled,
-        onFitScreenClick = onFitScreenClick,
+        displayMode = displayMode,
+        onDisplayModeClick = onDisplayModeClick,
         modifier = modifier
     )
 }
