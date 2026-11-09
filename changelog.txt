@@ -465,3 +465,14 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 - Reapply the latest transform when the MPV engine becomes Ready
 - Simplify Fit Screen state handling
 - Add tests for transform synchronization and lifecycle transitions
+
+
+**09.11.2026
+
+*efactor(player): migrate engine event handling to StateFlow and clean up legacy callbacks
+
+*fix(player): throttle gesture updates, reset brightness on exit, and sync transform geometry
+
+- Throttle volume and brightness drag updates in PlayerGestureHandler using seekThresholdPx
+- Reset window brightness override to system default on PlayScreen dispose
+- Include video geometry updates in PlayerViewModel transform synchronization

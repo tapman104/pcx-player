@@ -31,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -90,6 +91,23 @@ fun PlayScreen(
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+
+    // Brightness gesture overrides window.attributes.screenBrightness, which otherwise
+    // stays overridden (system auto-brightness stays disabled) after leaving this screen.
+    // Reset it to "follow system" on dispose.
+    DisposableEffect(Unit) {
+        onDispose {
+            var ctx: android.content.Context? = context
+            while (ctx is android.content.ContextWrapper && ctx !is Activity) {
+                ctx = ctx.baseContext
+            }
+            (ctx as? Activity)?.window?.let { window ->
+                val params = window.attributes
+                params.screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                window.attributes = params
+            }
+        }
+    }
 
     var isLocked by remember { mutableStateOf(false) }
     var lockControlsVisible by remember { mutableStateOf(false) }

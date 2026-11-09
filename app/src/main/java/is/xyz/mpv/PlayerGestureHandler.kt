@@ -128,6 +128,7 @@ fun Modifier.playerGestureHandler(
                 var totalPanX = 0f
                 var totalPanY = 0f
                 var lastAppliedPanX = 0f
+                var lastAppliedPanY = 0f
                 var committedPanY = 0f
                 var startVolume = 0
                 var maxVolume = 1
@@ -226,19 +227,27 @@ fun Modifier.playerGestureHandler(
                             }
 
                             GestureMode.VOLUME -> {
-                                val height = size.height.toFloat().coerceAtLeast(1f)
-                                val change = (-(totalPanY - committedPanY) / height * maxVolume * 1.5f).roundToInt()
-                                val target = (startVolume + change).coerceIn(0, maxVolume)
-                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-                                currentOnVolumeChange.value?.invoke(target, maxVolume)
+                                val deltaY = totalPanY - lastAppliedPanY
+                                if (abs(deltaY) >= seekThresholdPx) {
+                                    val height = size.height.toFloat().coerceAtLeast(1f)
+                                    val change = (-(totalPanY - committedPanY) / height * maxVolume * 1.5f).roundToInt()
+                                    val target = (startVolume + change).coerceIn(0, maxVolume)
+                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+                                    currentOnVolumeChange.value?.invoke(target, maxVolume)
+                                    lastAppliedPanY = totalPanY
+                                }
                             }
 
                             GestureMode.BRIGHTNESS -> {
-                                val height = size.height.toFloat().coerceAtLeast(1f)
-                                val change = -(totalPanY - committedPanY) / height * 1.5f
-                                val target = (startBrightness + change).coerceIn(0f, 1f)
-                                window?.updateBrightness(target)
-                                currentOnBrightnessChange.value?.invoke(target)
+                                val deltaY = totalPanY - lastAppliedPanY
+                                if (abs(deltaY) >= seekThresholdPx) {
+                                    val height = size.height.toFloat().coerceAtLeast(1f)
+                                    val change = -(totalPanY - committedPanY) / height * 1.5f
+                                    val target = (startBrightness + change).coerceIn(0f, 1f)
+                                    window?.updateBrightness(target)
+                                    currentOnBrightnessChange.value?.invoke(target)
+                                    lastAppliedPanY = totalPanY
+                                }
                             }
 
                             GestureMode.UNDECIDED,

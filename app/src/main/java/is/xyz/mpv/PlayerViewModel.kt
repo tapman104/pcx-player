@@ -59,6 +59,7 @@ private data class SubAndLangPrefs(
 private data class EngineTransformState(
     val isReady: Boolean,
     val transform: VideoTransform,
+    val geometry: VideoGeometry = VideoGeometry(),
 )
 
 internal fun matchesLanguage(trackLang: String?, targetCode: String): Boolean {
@@ -195,10 +196,11 @@ class PlayerViewModel(
         MPVLib.addLogObserver(logObserver)
         // Centralized collector applying video transform (zoom/pan) to MPV whenever the engine becomes Ready
         scope.launch {
-            combine(engine.status, _videoZoomState) { status, zoomState ->
+            combine(engine.status, _videoZoomState, eventHandler.videoGeometry) { status, zoomState, geometry ->
                 EngineTransformState(
                     isReady = status is EngineStatus.Ready,
                     transform = zoomState.current,
+                    geometry = geometry,
                 )
             }
                 .distinctUntilChanged()
