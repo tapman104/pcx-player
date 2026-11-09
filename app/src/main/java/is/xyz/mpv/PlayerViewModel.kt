@@ -106,6 +106,11 @@ class PlayerViewModel(
     private val _isLoadingNewFile = MutableStateFlow(false)
     val isLoadingNewFile: StateFlow<Boolean> = _isLoadingNewFile.asStateFlow()
 
+    // Guard flags: set true when the user explicitly selects a track, reset on new file load.
+    // Prevents the automatic language-matching collector from overriding a manual selection.
+    private var userSelectedSubtitle = false
+    private var userSelectedAudio = false
+
     val uiState: StateFlow<PlayerUiState> = combine(
         _explicitFileName,
         engine.status,
@@ -243,6 +248,7 @@ class PlayerViewModel(
                         old.third.selectedAudioId == new.third.selectedAudioId
                 }
                 .collect { (status, lang, trackState) ->
+                    if (userSelectedAudio) return@collect
                     if (status is EngineStatus.Ready && lang != null) {
                         val matchingTrack = trackState.audioTracks.firstOrNull { track ->
                             matchesLanguage(track.lang, lang)
@@ -264,6 +270,7 @@ class PlayerViewModel(
                         old.third.selectedSubtitleId == new.third.selectedSubtitleId
                 }
                 .collect { (status, lang, trackState) ->
+                    if (userSelectedSubtitle) return@collect
                     if (status is EngineStatus.Ready && lang != null) {
                         val matchingTrack = trackState.subtitleTracks.firstOrNull { track ->
                             matchesLanguage(track.lang, lang)
@@ -338,6 +345,9 @@ class PlayerViewModel(
         _playbackSpeed.value = 1f
         _videoDisplayState.value = VideoDisplayState()
         _orientationOverride.value = null
+        // Reset manual-selection guards so automatic language selection applies to the new file.
+        userSelectedSubtitle = false
+        userSelectedAudio = false
         // FIX #5: Set isLoadingNewFile true before calling engine.playFile
         _isLoadingNewFile.value = true
         engine.playFile(path)
@@ -388,10 +398,12 @@ class PlayerViewModel(
     }
 
     fun selectAudioTrack(id: Int) {
+        userSelectedAudio = true
         engine.selectAudioTrack(id)
     }
 
     fun selectSubtitleTrack(id: Int?) {
+        userSelectedSubtitle = true
         engine.selectSubtitleTrack(id)
     }
 

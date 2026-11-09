@@ -476,3 +476,7 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 - Throttle volume and brightness drag updates in PlayerGestureHandler using seekThresholdPx
 - Reset window brightness override to system default on PlayScreen dispose
 - Include video geometry updates in PlayerViewModel transform synchronization
+
+*feat(player): add video display modes
+
+*fix(player): prevent automatic subtitle reselection after manual selection
