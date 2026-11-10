@@ -490,3 +490,26 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 *add Auto, HW, HW+ and SW decoder options with refined three-dot menu UI
 
 *refactor(logging): optimize disk-based log storage
+
+*Add MediaStore-backed video library to HomeScreen
+Replace the placeholder HomeScreen with a video grid browsing local
+media via MediaStore, while preserving the existing manual Open Video
+picker and Settings navigation.
+
+- feature/library/: MediaFile, MediaStoreRepository (IO-dispatched
+  MediaStore query), MediaLibraryViewModel (StateFlow UI state,
+  permission-aware loading, resume-triggered refresh with
+  concurrent-query guard)
+- ui/: HomeScreen (top bar actions, permission/empty/partial states,
+  floating Home/Settings pill nav), VideoGrid (LazyVerticalGrid,
+  stable MediaStore IDs as keys), VideoItem (thumbnail via
+  ContentResolver.loadThumbnail with pre-Q fallback, LruCache keyed
+  on content URI, CancellationException handling)
+- Permissions: READ_MEDIA_VIDEO (API 33+),
+  READ_MEDIA_VISUAL_USER_SELECTED for partial access (API 34+),
+  READ_EXTERNAL_STORAGE maxSdk 32
+- MainActivity: wires onVideoClick through the existing
+  PlayerActivity.intentForUri entry point
+
+No new dependencies added. Falls back to ContentResolver.loadThumbnail()
+since Coil wasn't wired into app/build.gradle.kts
