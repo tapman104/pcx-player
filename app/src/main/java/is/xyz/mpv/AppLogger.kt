@@ -1,9 +1,13 @@
 package `is`.xyz.mpv
 
 import android.content.Context
+import java.io.ByteArrayInputStream
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,16 +33,12 @@ data class LogEntry(
 )
 
 object AppLogger {
-    private const val MAX_CAPACITY = 1000
     private const val MAX_FILE_SIZE = 2 * 1024 * 1024L // 2MB
     private const val LOG_FILE_NAME = "app.log"
-    private const val OLD_LOG_FILE_NAME = "app.log.old"
     private const val FLUSH_INTERVAL_WRITES = 50
-    private const val MAX_PENDING_DISK_WRITES = 1000
+    private const val MAX_PENDING_DISK_WRITES = 128
 
     private val lock = Any()
-    private val entries = ArrayDeque<LogEntry>(MAX_CAPACITY)
-    private var nextId = 0L
 
     private data class DiskWriteEntry(
         val timestamp: Long,
@@ -100,10 +100,8 @@ object AppLogger {
             } catch (_: Exception) {}
             logDir = dir
             sessionStartTime = System.currentTimeMillis()
-            entries.clear()
             pendingDiskEntries.clear()
             droppedEntriesCount = 0
-            nextId = 0L
         }
         try {
             diskExecutor.submit {
@@ -164,19 +162,6 @@ object AppLogger {
         val timestamp = System.currentTimeMillis()
         var scheduleWrite = false
         synchronized(lock) {
-            if (entries.size >= MAX_CAPACITY) {
-                entries.removeFirst()
-            }
-            entries.addLast(
-                LogEntry(
-                    id = nextId++,
-                    timestamp = timestamp,
-                    severity = severity,
-                    tag = tag,
-                    message = sanitized
-                )
-            )
-
             val isFull = pendingDiskEntries.size >= MAX_PENDING_DISK_WRITES
             val isError = severity == LogSeverity.ERROR
 
@@ -230,41 +215,115 @@ object AppLogger {
         }
     }
 
+    private fun cleanupLogFileIfNeeded(currentFile: File) {
+        if (!currentFile.exists() || currentFile.length() <= MAX_FILE_SIZE) {
+            return
+        }
+
+        try {
+            logWriter?.flush()
+            logWriter?.close()
+        } catch (_: Exception) {}
+        logWriter = null
+        writesSinceFlush = 0
+
+        val fileLength = currentFile.length()
+        if (fileLength <= MAX_FILE_SIZE) {
+            return
+        }
+
+        val bytesToRead = MAX_FILE_SIZE.toInt()
+        val startOffset = fileLength - MAX_FILE_SIZE
+        val buffer = ByteArray(bytesToRead)
+
+        try {
+            RandomAccessFile(currentFile, "r").use { raf ->
+                raf.seek(startOffset)
+                raf.readFully(buffer)
+            }
+
+            var firstNewlineIndex = -1
+            for (i in buffer.indices) {
+                if (buffer[i] == '\n'.code.toByte()) {
+                    firstNewlineIndex = i
+                    break
+                }
+            }
+
+            val retainedBytes = if (firstNewlineIndex != -1 && firstNewlineIndex + 1 < buffer.size) {
+                buffer.copyOfRange(firstNewlineIndex + 1, buffer.size)
+            } else {
+                ByteArray(0)
+            }
+
+            val parentDir = currentFile.parentFile ?: return
+            val tempFile = File(parentDir, "$LOG_FILE_NAME.tmp")
+            try {
+                FileOutputStream(tempFile).use { it.write(retainedBytes) }
+                try {
+                    Files.move(
+                        tempFile.toPath(),
+                        currentFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                } catch (_: Throwable) {
+                    // Fallback: keep currentFile untouched if move fails
+                }
+            } catch (_: Exception) {
+                // If rewrite fails, keep currentFile intact
+            } finally {
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+            }
+        } catch (_: Exception) {
+            // Keep silent per constraints
+        }
+    }
+
+    private fun getOrCreateLogDir(): File? {
+        val dir = logDir
+        if (dir != null) return dir
+        return synchronized(lock) {
+            logDir ?: try {
+                val fallback = File(System.getProperty("java.io.tmpdir"), "mpv_logs").apply { mkdirs() }
+                logDir = fallback
+                fallback
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     private fun writeToDisk(timestamp: Long, severity: LogSeverity, tag: String, message: String) {
-        val dir = logDir ?: return
+        val dir = getOrCreateLogDir() ?: return
         try {
             if (!dir.exists()) {
                 dir.mkdirs()
             }
             val currentFile = File(dir, LOG_FILE_NAME)
-            val oldFile = File(dir, OLD_LOG_FILE_NAME)
-
-            // Rotation: cap file at 2MB. On exceeding, rename current -> app.log.old (delete any existing .old first), start fresh app.log.
-            if (currentFile.exists() && currentFile.length() >= MAX_FILE_SIZE) {
-                try {
-                    logWriter?.close()
-                } catch (_: Exception) {}
-                logWriter = null
-
-                if (oldFile.exists()) {
-                    oldFile.delete()
-                }
-                currentFile.renameTo(oldFile)
-            }
 
             if (logWriter == null) {
+                if (currentFile.exists() && currentFile.length() > MAX_FILE_SIZE) {
+                    cleanupLogFileIfNeeded(currentFile)
+                }
                 logWriter = FileOutputStream(currentFile, true).bufferedWriter()
             }
 
             val timestampStr = dateFormat.format(Date(timestamp))
-            logWriter?.let { writer ->
-                writer.write("[$timestampStr] [${severity.name}] [$tag] $message")
-                writer.newLine()
-                writesSinceFlush++
-                if (writesSinceFlush >= FLUSH_INTERVAL_WRITES) {
-                    writer.flush()
-                    writesSinceFlush = 0
+            val writer = logWriter ?: return
+            writer.write("[$timestampStr] [${severity.name}] [$tag] $message")
+            writer.newLine()
+            writesSinceFlush++
+
+            if (writesSinceFlush >= FLUSH_INTERVAL_WRITES) {
+                writer.flush()
+                writesSinceFlush = 0
+                if (currentFile.length() > MAX_FILE_SIZE) {
+                    cleanupLogFileIfNeeded(currentFile)
                 }
+            } else if (severity == LogSeverity.ERROR) {
+                writer.flush()
             }
         } catch (_: Exception) {
             // Keep silent per constraints
@@ -304,21 +363,19 @@ object AppLogger {
         log(LogSeverity.ERROR, tag, msg)
     }
 
-    fun getLogs(): List<LogEntry> = synchronized(lock) {
-        entries.toList()
-    }
-
     fun getDroppedEntryCount(): Int = synchronized(lock) { droppedEntriesCount }
     fun getDroppedEntries(): Int = getDroppedEntryCount()
 
     fun clear() {
-        synchronized(lock) {
-            entries.clear()
-            pendingDiskEntries.clear()
-            sessionStartTime = System.currentTimeMillis()
-        }
         try {
             diskExecutor.submit {
+                val preservedErrors = synchronized(lock) {
+                    val pendingErrors = pendingDiskEntries.filter { it.severity == LogSeverity.ERROR }
+                    pendingDiskEntries.clear()
+                    sessionStartTime = System.currentTimeMillis()
+                    pendingErrors
+                }
+
                 try {
                     logWriter?.close()
                 } catch (_: Exception) {}
@@ -329,9 +386,21 @@ object AppLogger {
                 if (dir != null) {
                     try {
                         val currentFile = File(dir, LOG_FILE_NAME)
-                        val oldFile = File(dir, OLD_LOG_FILE_NAME)
                         if (currentFile.exists()) currentFile.delete()
-                        if (oldFile.exists()) oldFile.delete()
+                        val tempFile = File(dir, "$LOG_FILE_NAME.tmp")
+                        if (tempFile.exists()) tempFile.delete()
+                    } catch (_: Exception) {}
+                }
+
+                if (preservedErrors.isNotEmpty()) {
+                    synchronized(lock) {
+                        for (i in preservedErrors.indices.reversed()) {
+                            pendingDiskEntries.addFirst(preservedErrors[i])
+                        }
+                    }
+                    drainPendingWrites()
+                    try {
+                        logWriter?.flush()
                     } catch (_: Exception) {}
                 }
             }.get()
@@ -398,6 +467,105 @@ object AppLogger {
         return result
     }
 
+    fun loadLogPreview(maxBytes: Long = 4096L): List<LogEntry> {
+        val dir = getOrCreateLogDir() ?: return emptyList()
+        return try {
+            diskExecutor.submit(Callable {
+                try {
+                    drainPendingWrites()
+                    logWriter?.flush()
+                    val currentFile = File(dir, LOG_FILE_NAME)
+                    if (!currentFile.exists() || currentFile.length() == 0L) {
+                        return@Callable emptyList<LogEntry>()
+                    }
+                    readLogPreviewFromFile(currentFile, maxBytes)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }).get()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    internal fun readLogPreviewFromFile(file: File, maxBytes: Long = 4096L): List<LogEntry> {
+        val fileLength = file.length()
+        if (fileLength == 0L) return emptyList()
+
+        val bytesToRead = if (fileLength > maxBytes) maxBytes.toInt() else fileLength.toInt()
+        val startOffset = if (fileLength > maxBytes) fileLength - maxBytes else 0L
+        val buffer = ByteArray(bytesToRead)
+
+        RandomAccessFile(file, "r").use { raf ->
+            raf.seek(startOffset)
+            raf.readFully(buffer)
+        }
+
+        val (retainedOffset, retainedLength) = if (startOffset > 0L) {
+            var firstNewlineIndex = -1
+            for (i in buffer.indices) {
+                if (buffer[i] == '\n'.code.toByte()) {
+                    firstNewlineIndex = i
+                    break
+                }
+            }
+            if (firstNewlineIndex != -1 && firstNewlineIndex + 1 < buffer.size) {
+                Pair(firstNewlineIndex + 1, buffer.size - (firstNewlineIndex + 1))
+            } else {
+                Pair(0, 0)
+            }
+        } else {
+            Pair(0, buffer.size)
+        }
+
+        if (retainedLength == 0) return emptyList()
+
+        val lines = ByteArrayInputStream(buffer, retainedOffset, retainedLength)
+            .bufferedReader(Charsets.UTF_8)
+            .readLines()
+
+        val parsed = parseLogLines(lines)
+        return parsed.mapIndexed { index, entry ->
+            entry.copy(id = index.toLong())
+        }
+    }
+
+    fun getLogs(): List<LogEntry> {
+        val dir = getOrCreateLogDir() ?: return emptyList()
+        return try {
+            diskExecutor.submit(Callable {
+                try {
+                    drainPendingWrites()
+                    logWriter?.flush()
+                    val currentFile = File(dir, LOG_FILE_NAME)
+                    if (!currentFile.exists() || currentFile.length() == 0L) {
+                        return@Callable emptyList<LogEntry>()
+                    }
+                    val lines = currentFile.readLines()
+                    if (lines.isEmpty()) {
+                        return@Callable emptyList<LogEntry>()
+                    }
+                    val parsed = parseLogLines(lines)
+                    val currentSessionIndex = parsed.indexOfLast {
+                        it.message.startsWith(SESSION_START_PREFIX)
+                    }
+                    val currentEntries = if (currentSessionIndex >= 0) {
+                        parsed.subList(currentSessionIndex, parsed.size)
+                    } else {
+                        parsed
+                    }
+                    currentEntries.mapIndexed { index, entry ->
+                        entry.copy(id = index.toLong())
+                    }
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }).get()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     fun loadPreviousSessionLogs(): List<LogEntry> {
         val dir = logDir ?: return emptyList()
         return try {
@@ -405,16 +573,12 @@ object AppLogger {
                 try {
                     drainPendingWrites()
                     logWriter?.flush()
-                    val oldFile = File(dir, OLD_LOG_FILE_NAME)
                     val currentFile = File(dir, LOG_FILE_NAME)
+                    if (!currentFile.exists()) {
+                        return@Callable emptyList<LogEntry>()
+                    }
 
-                    val lines = mutableListOf<String>()
-                    if (oldFile.exists()) {
-                        lines.addAll(oldFile.readLines())
-                    }
-                    if (currentFile.exists()) {
-                        lines.addAll(currentFile.readLines())
-                    }
+                    val lines = currentFile.readLines()
                     if (lines.isEmpty()) {
                         return@Callable emptyList<LogEntry>()
                     }
@@ -429,14 +593,8 @@ object AppLogger {
                         parsed
                     }
 
-                    val limited = if (previousEntries.size > MAX_CAPACITY) {
-                        previousEntries.takeLast(MAX_CAPACITY)
-                    } else {
-                        previousEntries
-                    }
-
-                    val count = limited.size
-                    limited.mapIndexed { index, entry ->
+                    val count = previousEntries.size
+                    previousEntries.mapIndexed { index, entry ->
                         entry.copy(id = -(count - index).toLong())
                     }
                 } catch (_: Exception) {
@@ -455,6 +613,13 @@ object AppLogger {
                     drainPendingWrites()
                     logWriter?.flush()
                     writesSinceFlush = 0
+                    val dir = logDir
+                    if (dir != null) {
+                        val currentFile = File(dir, LOG_FILE_NAME)
+                        if (currentFile.exists() && currentFile.length() > MAX_FILE_SIZE) {
+                            cleanupLogFileIfNeeded(currentFile)
+                        }
+                    }
                 } catch (_: Exception) {}
             }.get()
         } catch (_: Exception) {}
@@ -468,40 +633,16 @@ object AppLogger {
                 if (dir != null) {
                     try {
                         logWriter?.flush()
-                        val oldFile = File(dir, OLD_LOG_FILE_NAME)
                         val currentFile = File(dir, LOG_FILE_NAME)
-                        if (oldFile.exists() || currentFile.exists()) {
-                            val sb = StringBuilder()
-                            if (oldFile.exists()) {
-                                sb.append(oldFile.readText())
-                            }
-                            if (currentFile.exists()) {
-                                sb.append(currentFile.readText())
-                            }
-                            return@Callable sb.toString()
+                        if (currentFile.exists()) {
+                            return@Callable currentFile.readText()
                         }
                     } catch (_: Exception) {}
                 }
-
-                formatEntriesInMemory()
+                ""
             }).get()
         } catch (_: Exception) {
-            formatEntriesInMemory()
-        }
-    }
-
-    private fun formatEntriesInMemory(): String = synchronized(lock) {
-        buildString {
-            for (entry in entries) {
-                append('[')
-                append(dateFormat.format(Date(entry.timestamp)))
-                append("] [")
-                append(entry.severity.name)
-                append("] [")
-                append(entry.tag)
-                append("] ")
-                appendLine(entry.message)
-            }
+            ""
         }
     }
 }

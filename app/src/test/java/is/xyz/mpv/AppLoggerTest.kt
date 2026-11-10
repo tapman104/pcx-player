@@ -142,19 +142,20 @@ class AppLoggerTest {
             val currentFile = File(tempDir, "app.log")
             val oldFile = File(tempDir, "app.log.old")
 
-            // Write 2MB into currentFile to trigger rotation on next write
+            // Write 2MB into currentFile to trigger cleanup on next write
             val dummyBytes = ByteArray(2 * 1024 * 1024 + 10)
             currentFile.writeBytes(dummyBytes)
 
-            // Logging another message should rotate currentFile to oldFile
+            // Logging another message should trigger size-based cleanup of currentFile
             AppLogger.i("RotationTag", "New message after 2MB rotation")
             AppLogger.flush()
 
-            assertTrue("Old log file should exist after rotation", oldFile.exists())
-            assertTrue("Current log file should exist after rotation", currentFile.exists())
+            assertFalse("Old log file should not exist under single-file storage", oldFile.exists())
+            assertTrue("Current log file should exist after cleanup", currentFile.exists())
+            assertTrue("Current log file should not exceed 2MB", currentFile.length() <= 2 * 1024 * 1024)
 
             val export = AppLogger.formatLogsForExport()
-            assertTrue("Export should include message from rotated/new logs", export.contains("New message after 2MB rotation"))
+            assertTrue("Export should include message from cleaned up logs", export.contains("New message after 2MB rotation"))
 
             AppLogger.clear()
             assertFalse(currentFile.exists())
@@ -294,17 +295,11 @@ class AppLoggerTest {
         val tempDir = Files.createTempDirectory("app_logger_coincidental_test").toFile()
         try {
             tempDir.mkdirs()
-            val oldFile = File(tempDir, "app.log.old")
             val currentFile = File(tempDir, "app.log")
 
-            // Simulate previous session with content appearing BEFORE and AFTER a coincidental duplicate.
-            // Even if the coincidental duplicate is early in app.log.old, nothing before the real session boundary
-            // must be dropped.
-            oldFile.writeText(
-                "[2026-11-05 10:00:00.000] [INFO] [SharedTag] Previous line before duplicate\n" +
-                "[2026-11-05 10:00:01.000] [INFO] [SharedTag] Coincidental duplicate line\n"
-            )
             currentFile.writeText(
+                "[2026-11-05 10:00:00.000] [INFO] [SharedTag] Previous line before duplicate\n" +
+                "[2026-11-05 10:00:01.000] [INFO] [SharedTag] Coincidental duplicate line\n" +
                 "[2026-11-06 09:00:00.000] [WARN] [SharedTag] Genuine previous session line after duplicate\n"
             )
 
@@ -375,29 +370,37 @@ class AppLoggerTest {
     }
 
     @Test
-    fun testLoadPreviousSessionLogsIncludesOldRotatedFile() {
-        val tempDir = Files.createTempDirectory("app_logger_old_test").toFile()
+    fun testSingleFileCleanupWhenExceeding2MB() {
+        val tempDir = Files.createTempDirectory("app_logger_cleanup_detail_test").toFile()
         try {
-            tempDir.mkdirs()
-            val oldFile = File(tempDir, "app.log.old")
+            AppLogger.initInternal(tempDir)
             val currentFile = File(tempDir, "app.log")
 
-            oldFile.writeText("[2026-11-05 08:00:00.000] [INFO] [OldTag] Old file log\n")
-            currentFile.writeText("[2026-11-06 09:00:00.000] [ERROR] [CurTag] Current file prev log\n")
+            val linePrefix = "[2026-11-05 08:00:00.000] [INFO] [OldTag] "
+            val padding = "A".repeat(500)
+            val line = "$linePrefix$padding\n"
+            val numLines = (2 * 1024 * 1024 / line.length) + 20
+            val sb = StringBuilder()
+            for (i in 1..numLines) {
+                sb.append("[2026-11-05 08:00:00.000] [INFO] [OldTag] Line $i $padding\n")
+            }
+            currentFile.writeText(sb.toString())
+            assertTrue("File should initially exceed 2MB", currentFile.length() > 2 * 1024 * 1024)
 
-            AppLogger.initInternal(tempDir)
+            // Logging another message should trigger cleanup:
+            // 1. Read newest 2MB
+            // 2. Skip first incomplete line
+            // 3. Rewrite app.log
+            // 4. Append new entry
+            AppLogger.i("NewTag", "Fresh message after cleanup")
+            AppLogger.flush()
 
-            val previousLogs = AppLogger.loadPreviousSessionLogs()
-            assertEquals(2, previousLogs.size)
-            assertEquals("Old file log", previousLogs[0].message)
-            assertEquals(LogSeverity.INFO, previousLogs[0].severity)
-            assertEquals("OldTag", previousLogs[0].tag)
-            assertEquals(-2L, previousLogs[0].id)
-
-            assertEquals("Current file prev log", previousLogs[1].message)
-            assertEquals(LogSeverity.ERROR, previousLogs[1].severity)
-            assertEquals("CurTag", previousLogs[1].tag)
-            assertEquals(-1L, previousLogs[1].id)
+            assertTrue(currentFile.exists())
+            assertTrue("File should not exceed 2MB after cleanup", currentFile.length() <= 2 * 1024 * 1024)
+            val content = currentFile.readText()
+            assertTrue(content.contains("Fresh message after cleanup"))
+            // Check that the file begins cleanly with a complete line header '['
+            assertTrue("File should start with a complete line", content.startsWith("["))
         } finally {
             tempDir.deleteRecursively()
         }
@@ -422,6 +425,98 @@ class AppLoggerTest {
             assertTrue(previousLogs[0].message.contains("Exception occurred"))
             assertTrue(previousLogs[0].message.contains("java.lang.RuntimeException: Test crash"))
             assertTrue(previousLogs[0].message.contains("at com.example.Test.run(Test.kt:10)"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testSingleLogEntryLargerThan2MB() {
+        val tempDir = Files.createTempDirectory("app_logger_huge_entry_test").toFile()
+        try {
+            AppLogger.initInternal(tempDir)
+            val currentFile = File(tempDir, "app.log")
+
+            // Log an entry larger than 2MB
+            val hugeMessage = "A".repeat(2 * 1024 * 1024 + 100)
+            AppLogger.i("HugeTag", hugeMessage)
+            AppLogger.flush()
+
+            assertTrue(currentFile.exists())
+            assertTrue("File size should not exceed 2MB even with huge entry", currentFile.length() <= 2 * 1024 * 1024)
+
+            // Logging another message works properly
+            AppLogger.i("AfterHugeTag", "Subsequent message")
+            AppLogger.flush()
+
+            assertTrue(currentFile.exists())
+            assertTrue("File size should remain <= 2MB", currentFile.length() <= 2 * 1024 * 1024)
+            val text = currentFile.readText()
+            assertTrue(text.contains("Subsequent message"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testUtf8CharactersAtRetainedFileBoundary() {
+        val tempDir = Files.createTempDirectory("app_logger_utf8_test").toFile()
+        try {
+            AppLogger.initInternal(tempDir)
+            val currentFile = File(tempDir, "app.log")
+
+            // Construct lines containing 3-byte and 4-byte UTF-8 characters
+            val linePrefix = "[2026-11-06 10:00:00.000] [INFO] [UtfTag] "
+            val emojiString = "🎉🔥🚀✨你好世界Русскийтекст"
+            val lineContent = linePrefix + emojiString.repeat(20) + "\n"
+            val lineByteSize = lineContent.toByteArray(Charsets.UTF_8).size
+            val totalLines = (2 * 1024 * 1024 / lineByteSize) + 50
+            val sb = StringBuilder()
+            for (i in 1..totalLines) {
+                sb.append(lineContent)
+            }
+            currentFile.writeText(sb.toString(), Charsets.UTF_8)
+            assertTrue("Initial file should exceed 2MB", currentFile.length() > 2 * 1024 * 1024)
+
+            AppLogger.i("UtfTag", "Fresh message after UTF-8 cleanup 🎉")
+            AppLogger.flush()
+
+            assertTrue(currentFile.exists())
+            assertTrue("File size should not exceed 2MB", currentFile.length() <= 2 * 1024 * 1024)
+            val content = currentFile.readText(Charsets.UTF_8)
+            assertTrue("Content should contain the new message", content.contains("Fresh message after UTF-8 cleanup 🎉"))
+            assertTrue("First retained line should be complete and start with '['", content.startsWith("["))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testLogPreviewReadsLatest4KBAndSkipsIncompleteFirstLine() {
+        val tempDir = Files.createTempDirectory("app_logger_preview_test").toFile()
+        try {
+            AppLogger.initInternal(tempDir)
+            AppLogger.flush()
+            val currentFile = File(tempDir, "app.log")
+
+            // Write 50 lines of ~200 bytes each = ~10 KB of logs
+            val sb = StringBuilder()
+            for (i in 1..50) {
+                val padding = "x".repeat(150)
+                sb.append("[2026-11-10 10:00:00.000] [INFO] [PreviewTag] Line $i $padding\n")
+            }
+            currentFile.writeText(sb.toString())
+
+            val preview = AppLogger.loadLogPreview(4096L)
+            assertTrue("Preview should not be empty", preview.isNotEmpty())
+            assertTrue("Preview should contain latest entries", preview.any { it.message.contains("Line 50") })
+            assertFalse("Preview should not contain earliest entries", preview.any { it.message.contains("Line 1 ") })
+            val previewTagEntries = preview.filter { it.tag == "PreviewTag" }
+            assertTrue("Should contain PreviewTag entries", previewTagEntries.isNotEmpty())
+            for (entry in previewTagEntries) {
+                assertEquals("PreviewTag", entry.tag)
+                assertEquals(LogSeverity.INFO, entry.severity)
+            }
         } finally {
             tempDir.deleteRecursively()
         }

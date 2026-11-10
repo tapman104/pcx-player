@@ -488,3 +488,5 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 *feat: add built-in MPV playback profiles
 
 *add Auto, HW, HW+ and SW decoder options with refined three-dot menu UI
+
+*refactor(logging): optimize disk-based log storage

@@ -20,12 +20,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +63,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+enum class LogFilter(val label: String) {
+    ALL("All"),
+    APP("App"),
+    MPV("MPV"),
+    APP_ERRORS("App errors"),
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppLogViewerScreen(
@@ -66,25 +77,33 @@ fun AppLogViewerScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var previousLogs by remember { mutableStateOf<List<LogEntry>>(emptyList()) }
-    var memoryLogs by remember { mutableStateOf(AppLogger.getLogs()) }
-    val logs = remember(previousLogs, memoryLogs) { previousLogs + memoryLogs }
+    var logs by remember { mutableStateOf<List<LogEntry>>(emptyList()) }
+    var selectedFilter by remember { mutableStateOf(LogFilter.ALL) }
+    var filterMenuExpanded by remember { mutableStateOf(false) }
+    val filteredLogs = remember(logs, selectedFilter) {
+        when (selectedFilter) {
+            LogFilter.ALL -> logs
+            LogFilter.APP -> logs.filter { !it.tag.startsWith("mpv:", ignoreCase = true) }
+            LogFilter.MPV -> logs.filter { it.tag.startsWith("mpv:", ignoreCase = true) }
+            LogFilter.APP_ERRORS -> logs.filter {
+                !it.tag.startsWith("mpv:", ignoreCase = true) && it.severity == LogSeverity.ERROR
+            }
+        }
+    }
     var showClearDialog by remember { mutableStateOf(false) }
 
     // Polling runs only while AppLogViewerScreen is in composition.
     // When the user navigates back to SettingsHub or leaves the screen,
     // the coroutine launched by LaunchedEffect(Unit) is automatically cancelled.
     LaunchedEffect(Unit) {
-        val loadedPreviousLogs = withContext(Dispatchers.IO) {
-            AppLogger.loadPreviousSessionLogs()
-        }
-        previousLogs = loadedPreviousLogs
         while (true) {
-            delay(500L)
-            val latestLogs = AppLogger.getLogs()
-            if (latestLogs != memoryLogs) {
-                memoryLogs = latestLogs
+            val previewLogs = withContext(Dispatchers.IO) {
+                AppLogger.loadLogPreview()
             }
+            if (previewLogs != logs) {
+                logs = previewLogs
+            }
+            delay(1000L)
         }
     }
 
@@ -123,15 +142,14 @@ fun AppLogViewerScreen(
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text("Clear logs") },
-            text = { Text("Are you sure you want to clear all in-memory logs?") },
+            text = { Text("Are you sure you want to clear all logs?") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         scope.launch(Dispatchers.IO) {
                             AppLogger.clear()
                             withContext(Dispatchers.Main) {
-                                previousLogs = emptyList()
-                                memoryLogs = emptyList()
+                                logs = emptyList()
                                 showClearDialog = false
                             }
                         }
@@ -181,6 +199,36 @@ fun AppLogViewerScreen(
                             contentDescription = "Share logs"
                         )
                     }
+                    Box {
+                        IconButton(onClick = { filterMenuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.FilterList,
+                                contentDescription = "Filter logs"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = filterMenuExpanded,
+                            onDismissRequest = { filterMenuExpanded = false }
+                        ) {
+                            LogFilter.entries.forEach { filter ->
+                                DropdownMenuItem(
+                                    text = { Text(filter.label) },
+                                    onClick = {
+                                        selectedFilter = filter
+                                        filterMenuExpanded = false
+                                    },
+                                    leadingIcon = if (selectedFilter == filter) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    } else null
+                                )
+                            }
+                        }
+                    }
                     IconButton(
                         onClick = {
                             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -215,6 +263,19 @@ fun AppLogViewerScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+        } else if (filteredLogs.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No logs match this filter",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -223,7 +284,7 @@ fun AppLogViewerScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(logs, key = { it.id }) { logEntry ->
+                items(filteredLogs, key = { it.id }) { logEntry ->
                     LogEntryRow(entry = logEntry)
                 }
             }
