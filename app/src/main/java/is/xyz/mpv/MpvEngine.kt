@@ -460,6 +460,11 @@ open class MpvEngine(
         MPVLib.setPropertyString("slang", code.orEmpty())
     }
 
+    fun setDecoderMode(mode: DecoderMode) {
+        if (!isReady) return
+        MPVLib.setPropertyString("hwdec", MpvOptionsConfigurator.hwdecOptionValue(mode))
+    }
+
     /**
      * Sets the VO to use.
      * It is automatically disabled/enabled when the surface dis-/appears.

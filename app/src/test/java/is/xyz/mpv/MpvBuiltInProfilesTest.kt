@@ -68,18 +68,22 @@ class MpvBuiltInProfilesTest {
 
         // Default profile wraps MpvOptions() exactly
         assertEquals(MpvOptions(), MpvBuiltInProfiles.DEFAULT.options)
+        assertEquals(DecoderMode.AUTO, MpvBuiltInProfiles.DEFAULT.options.hardwareDecoding)
 
-        // Mobile performance enables fast decode
+        // Mobile performance enables fast decode and direct hardware decoding
         assertTrue(MpvBuiltInProfiles.MOBILE_PERFORMANCE.options.fastDecode)
         assertFalse(MpvBuiltInProfiles.MOBILE_PERFORMANCE.options.gpuNext)
+        assertEquals(DecoderMode.HARDWARE, MpvBuiltInProfiles.MOBILE_PERFORMANCE.options.hardwareDecoding)
 
-        // Balanced sets spline36 scaler
+        // Balanced sets spline36 scaler and safe auto hardware decoding
         assertEquals("spline36", MpvBuiltInProfiles.BALANCED.options.videoScale)
+        assertEquals(DecoderMode.AUTO, MpvBuiltInProfiles.BALANCED.options.hardwareDecoding)
 
-        // High Quality maintains stable GPU renderer, enables ewa_lanczos and GPU debanding
+        // High Quality maintains stable GPU renderer, enables ewa_lanczos, GPU debanding, and HW+ copy mode
         assertFalse(MpvBuiltInProfiles.HIGH_QUALITY.options.gpuNext)
         assertEquals("ewa_lanczos", MpvBuiltInProfiles.HIGH_QUALITY.options.videoScale)
         assertEquals(Debanding.GPU, MpvBuiltInProfiles.HIGH_QUALITY.options.debanding)
+        assertEquals(DecoderMode.HARDWARE_COPY, MpvBuiltInProfiles.HIGH_QUALITY.options.hardwareDecoding)
     }
 
     @Test
@@ -130,6 +134,7 @@ class MpvBuiltInProfilesTest {
         assertTrue("vo=gpu must be set", optionCalls.contains("vo" to "gpu"))
         assertTrue("scale=ewa_lanczos must be set", optionCalls.contains("scale" to "ewa_lanczos"))
         assertTrue("deband=yes must be set", optionCalls.contains("deband" to "yes"))
+        assertTrue("hwdec=mediacodec-copy must be set", optionCalls.contains("hwdec" to "mediacodec-copy"))
 
         // Hardcoded options remain unconditionally present
         assertTrue("profile=fast must be unconditionally set", optionCalls.contains("profile" to "fast"))
@@ -158,6 +163,7 @@ class MpvBuiltInProfilesTest {
         assertTrue("vo=gpu must be set", optionCalls.contains("vo" to "gpu"))
         assertTrue("vd-lavc-fast=yes must be set", optionCalls.contains("vd-lavc-fast" to "yes"))
         assertTrue("vd-lavc-skiploopfilter=nonkey must be set", optionCalls.contains("vd-lavc-skiploopfilter" to "nonkey"))
+        assertTrue("hwdec=mediacodec must be set", optionCalls.contains("hwdec" to "mediacodec"))
 
         engine.destroy()
     }
@@ -180,6 +186,7 @@ class MpvBuiltInProfilesTest {
 
         assertTrue("vo=gpu must be set", optionCalls.contains("vo" to "gpu"))
         assertTrue("scale=spline36 must be set", optionCalls.contains("scale" to "spline36"))
+        assertTrue("hwdec=auto-safe must be set", optionCalls.contains("hwdec" to "auto-safe"))
 
         engine.destroy()
     }

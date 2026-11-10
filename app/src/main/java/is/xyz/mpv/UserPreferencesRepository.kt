@@ -23,7 +23,18 @@ enum class ThemeMode {
 }
 
 enum class DecoderMode {
-    AUTO, HARDWARE, SOFTWARE
+    AUTO,
+    HARDWARE,
+    HARDWARE_COPY,
+    SOFTWARE;
+
+    val displayName: String
+        get() = when (this) {
+            AUTO -> "Auto"
+            HARDWARE -> "HW"
+            HARDWARE_COPY -> "HW+"
+            SOFTWARE -> "SW"
+        }
 }
 
 /**

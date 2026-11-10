@@ -83,6 +83,7 @@ internal fun matchesLanguage(trackLang: String?, targetCode: String): Boolean {
 class PlayerViewModel(
     private val appContext: Context,
     coroutineScope: CoroutineScope? = null,
+    private val preferencesRepository: UserPreferencesRepository = UserPreferencesRepository(appContext),
 ) : ViewModel() {
 
     private val scope = coroutineScope ?: viewModelScope
@@ -98,8 +99,6 @@ class PlayerViewModel(
     val engine: MpvEngine = MpvEngine(appContext, eventHandler)
 
     val trackState: StateFlow<TrackState> = eventHandler.trackState
-
-    private val preferencesRepository = UserPreferencesRepository(appContext)
 
     private val _explicitFileName = MutableStateFlow<String?>(null)
 
@@ -197,6 +196,8 @@ class PlayerViewModel(
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
     val preferredSubtitleLang: StateFlow<String?> = preferencesRepository.preferredSubtitleLang
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
+    val decoderMode: StateFlow<DecoderMode> = preferencesRepository.decoderMode
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), DecoderMode.AUTO)
 
     init {
         AppLogger.i(TAG, "PlayerViewModel initialized")
@@ -232,6 +233,15 @@ class PlayerViewModel(
                     engine.setSubPos(pos)
                     engine.setAudioLang(audioLang)
                     engine.setSubtitleLang(subLang)
+                }
+            }
+        }
+        scope.launch {
+            combine(engine.status, preferencesRepository.decoderMode) { status, mode ->
+                status to mode
+            }.distinctUntilChanged().collect { (status, mode) ->
+                if (status is EngineStatus.Ready) {
+                    engine.setDecoderMode(mode)
                 }
             }
         }
@@ -447,6 +457,12 @@ class PlayerViewModel(
     fun setOrientationMode(mode: OrientationMode) {
         scope.launch {
             preferencesRepository.setOrientationMode(mode)
+        }
+    }
+
+    fun setDecoderMode(mode: DecoderMode) {
+        scope.launch {
+            preferencesRepository.setDecoderMode(mode)
         }
     }
 

@@ -89,6 +89,7 @@ fun PlayScreen(
     val orientationState by viewModel.orientationState.collectAsState()
     val subFontSize by viewModel.subFontSize.collectAsState()
     val subPos by viewModel.subPos.collectAsState()
+    val decoderMode by viewModel.decoderMode.collectAsState()
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
@@ -518,6 +519,11 @@ fun PlayScreen(
             },
             onPipModeClick = {
                 // TODO: implement
+            },
+            decoderMode = decoderMode,
+            onDecoderModeChange = { mode ->
+                viewModel.setDecoderMode(mode)
+                resetHideTimer()
             }
         )
 

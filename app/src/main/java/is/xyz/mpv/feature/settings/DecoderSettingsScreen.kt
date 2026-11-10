@@ -63,11 +63,6 @@ fun DecoderSettingsScreen(
             SettingsSection(title = "Decoder") {
                 DecoderMode.entries.forEachIndexed { index, mode ->
                     val isSelected = mode == decoderMode
-                    val label = when (mode) {
-                        DecoderMode.AUTO -> "Auto"
-                        DecoderMode.HARDWARE -> "Hardware"
-                        DecoderMode.SOFTWARE -> "Software"
-                    }
 
                     SettingsRow(
                         selected = isSelected,
@@ -80,7 +75,7 @@ fun DecoderSettingsScreen(
                     ) {
                         RadioButton(selected = isSelected, onClick = null)
                         Spacer(modifier = Modifier.width(12.dp))
-                        SettingsLabel(label, isSelected)
+                        SettingsLabel(mode.displayName, isSelected)
                     }
 
                     if (index != DecoderMode.entries.lastIndex) {

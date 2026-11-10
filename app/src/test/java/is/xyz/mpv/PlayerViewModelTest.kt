@@ -299,7 +299,7 @@ class PlayerViewModelTest {
         MPVLib.logMessage("ao", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_DEBUG, "Buffer stats")
         MPVLib.logMessage("core", MPVLib.MpvLogLevel.MPV_LOG_LEVEL_TRACE, "Trace step")
 
-        val logs = AppLogger.getLogs()
+        val logs = AppLogger.getLogs().filter { it.tag.startsWith("mpv:") }
         assertEquals(4, logs.size)
 
         assertEquals(LogSeverity.ERROR, logs[0].severity)

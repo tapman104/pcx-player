@@ -12,7 +12,9 @@ object MpvBuiltInProfiles {
         id = "default",
         name = "Default",
         description = "Preserve current application playback behaviour",
-        options = MpvOptions(),
+        options = MpvOptions(
+            hardwareDecoding = DecoderMode.AUTO,
+        ),
     )
 
     val MOBILE_PERFORMANCE = MpvProfile(
@@ -21,6 +23,7 @@ object MpvBuiltInProfiles {
         description = "Prioritize performance and lower resource usage",
         options = MpvOptions(
             fastDecode = true,
+            hardwareDecoding = DecoderMode.HARDWARE,
         ),
     )
 
@@ -30,6 +33,7 @@ object MpvBuiltInProfiles {
         description = "Balance performance and video quality",
         options = MpvOptions(
             videoScale = "spline36",
+            hardwareDecoding = DecoderMode.AUTO,
         ),
     )
 
@@ -40,6 +44,7 @@ object MpvBuiltInProfiles {
         options = MpvOptions(
             videoScale = "ewa_lanczos",
             debanding = Debanding.GPU,
+            hardwareDecoding = DecoderMode.HARDWARE_COPY,
         ),
     )
 
