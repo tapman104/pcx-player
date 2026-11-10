@@ -480,3 +480,9 @@ feat(player): improve swipe gestures and add icon to double-tap seek indicator
 *feat(player): add video display modes
 
 *fix(player): prevent automatic subtitle reselection after manual selection
+
+
+
+10.11.2026
+
+*feat: add built-in MPV playback profiles

@@ -78,7 +78,11 @@ open class MpvEngine(
      * Transitions engine status to [EngineStatus.Ready] on success and calls [flushPending] to attach
      * any pending surface and load any pending file once prerequisites are satisfied.
      */
-    fun initialize(configDir: String, cacheDir: String) {
+    fun initialize(
+        configDir: String,
+        cacheDir: String,
+        options: MpvOptions = MpvOptions(),
+    ) {
         var nativeCreated = false
         var initException: Throwable? = null
 
@@ -107,7 +111,7 @@ open class MpvEngine(
             for (opt in arrayOf("gpu-shader-cache-dir", "icc-cache-dir")) {
                 MPVLib.setOptionString(opt, cacheDir)
             }
-            initOptions()
+            initOptions(options)
 
             MPVLib.init()
 
@@ -294,8 +298,8 @@ open class MpvEngine(
         }
     }
 
-    protected open fun initOptions() {
-        voInUse = optionsConfigurator.configure(MpvOptions())
+    protected open fun initOptions(options: MpvOptions = MpvOptions()) {
+        voInUse = optionsConfigurator.configure(options)
     }
 
     protected open fun postInitOptions() {

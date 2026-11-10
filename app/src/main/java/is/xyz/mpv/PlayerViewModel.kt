@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -298,12 +299,16 @@ class PlayerViewModel(
     private fun initEngine() {
         scope.launch {
             try {
+                val profile = preferencesRepository.playbackProfile.first()
                 engine.initialize(
                     configDir = appContext.filesDir.path,
                     cacheDir  = appContext.cacheDir.path,
+                    options   = profile.options,
                 )
-                Log.i(TAG, "Engine init success")
-                AppLogger.i(TAG, "Engine init success")
+                if (engine.isReady) {
+                    Log.i(TAG, "Engine init success with profile: ${profile.name}")
+                    AppLogger.i(TAG, "Engine init success with profile: ${profile.name}")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Engine init failed", e)
                 AppLogger.e(TAG, "Engine init failed: ${e.message}", e)

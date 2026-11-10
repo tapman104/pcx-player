@@ -3,6 +3,10 @@ package `is`.xyz.mpv
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.Surface
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 
 /**
  * JVM test double for [MPVLib].
@@ -19,6 +23,8 @@ object MPVLib {
     var createCallCount: Int = 0
     var detachSurfaceCallCount: Int = 0
     var isCreated: Boolean = false
+    var isInitialized: Boolean = false
+    var optionsBeforeInitCount: Int = 0
     var onDestroy: (() -> Unit)? = null
 
     fun create(appctx: Context?) {
@@ -33,6 +39,27 @@ object MPVLib {
         if (simulateInitFailure || simulatePostCreateFailure) {
             throw RuntimeException("Simulated MPVLib.init failure")
         }
+        isInitialized = true
+        optionsBeforeInitCount = setOptionStringCalls.size
+    }
+
+    val activeJobs = mutableListOf<kotlinx.coroutines.Job>()
+    val geometryJobs = java.util.Collections.synchronizedMap(java.util.WeakHashMap<EngineEventHandler, kotlinx.coroutines.Job>())
+    val progressJobs = java.util.Collections.synchronizedMap(java.util.WeakHashMap<EngineEventHandler, kotlinx.coroutines.Job>())
+
+    fun clearTestCallbacks() {
+        synchronized(activeJobs) {
+            activeJobs.forEach { it.cancel() }
+            activeJobs.clear()
+        }
+        synchronized(geometryJobs) {
+            geometryJobs.values.forEach { it.cancel() }
+            geometryJobs.clear()
+        }
+        synchronized(progressJobs) {
+            progressJobs.values.forEach { it.cancel() }
+            progressJobs.clear()
+        }
     }
 
     fun destroy() {
@@ -43,8 +70,12 @@ object MPVLib {
         if (simulateDestroyFailure) {
             throw RuntimeException("Simulated MPVLib.destroy failure")
         }
-        isCreated = false
-        onDestroy?.invoke()
+        try {
+            onDestroy?.invoke()
+        } finally {
+            clearTestCallbacks()
+            isCreated = false
+        }
     }
     val attachedSurfaces = mutableListOf<Surface>()
     val loadedFiles = mutableListOf<String>()
@@ -78,7 +109,14 @@ object MPVLib {
     }
     fun commandNode(cmd: Array<String>): MPVNode? = null
 
-    fun setOptionString(name: String, value: String): Int = 0
+    val setOptionStringCalls = mutableListOf<Pair<String, String>>()
+
+    fun setOptionString(name: String, value: String): Int {
+        synchronized(setOptionStringCalls) {
+            setOptionStringCalls.add(name to value)
+        }
+        return 0
+    }
 
     fun grabThumbnail(dimension: Int): Bitmap? = null
     fun grabThumbnailFast(file: String, pos: Double, dimension: Int, accurate: Boolean): Bitmap? = null
@@ -129,6 +167,7 @@ object MPVLib {
         get() = synchronized(log_observers) { log_observers.toList() }
 
     fun clearObservers() {
+        clearTestCallbacks()
         synchronized(observers) {
             observers.clear()
         }
@@ -155,6 +194,9 @@ object MPVLib {
             setPropertyDoubleCalls.clear()
             setPropertiesDouble.clear()
         }
+        synchronized(setOptionStringCalls) {
+            setOptionStringCalls.clear()
+        }
         simulateInitFailure = false
         simulatePostCreateFailure = false
         simulateDestroyFailure = false
@@ -164,6 +206,8 @@ object MPVLib {
         createCallCount = 0
         detachSurfaceCallCount = 0
         isCreated = false
+        isInitialized = false
+        optionsBeforeInitCount = 0
         onDestroy = null
     }
 
@@ -339,3 +383,38 @@ object MPVLib {
         const val MPV_LOG_LEVEL_TRACE = 70
     }
 }
+
+// Test compatibility extension properties for legacy callback signatures removed in commit b390c61
+var EngineEventHandler.onVideoGeometryChanged: ((VideoGeometry) -> Unit)?
+    get() = null
+    set(value) {
+        synchronized(MPVLib.geometryJobs) {
+            MPVLib.geometryJobs.remove(this)?.cancel()
+            if (value != null) {
+                val job = CoroutineScope(Dispatchers.Unconfined).launch {
+                    videoGeometry.drop(1).collect { value(it) }
+                }
+                MPVLib.geometryJobs[this] = job
+                synchronized(MPVLib.activeJobs) { MPVLib.activeJobs.add(job) }
+            }
+        }
+    }
+
+var EngineEventHandler.onPlaybackProgressChanged: ((positionSec: Double, durationSec: Double) -> Unit)?
+    get() = null
+    set(value) {
+        synchronized(MPVLib.progressJobs) {
+            MPVLib.progressJobs.remove(this)?.cancel()
+            if (value != null) {
+                val job = CoroutineScope(Dispatchers.Unconfined).launch {
+                    playbackProgress.drop(1).collect { value(it.positionSec, it.durationSec) }
+                }
+                MPVLib.progressJobs[this] = job
+                synchronized(MPVLib.activeJobs) { MPVLib.activeJobs.add(job) }
+            }
+        }
+    }
+
+val EngineEventHandler.geometry: kotlinx.coroutines.flow.StateFlow<VideoGeometry> get() = videoGeometry
+val EngineEventHandler.progress: kotlinx.coroutines.flow.StateFlow<PlaybackProgress> get() = playbackProgress
+

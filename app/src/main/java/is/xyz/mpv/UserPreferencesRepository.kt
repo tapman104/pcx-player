@@ -43,7 +43,15 @@ class UserPreferencesRepository(private val appContext: Context) {
         val AMOLED_ENABLED = booleanPreferencesKey("amoled_enabled")
         val PREFERRED_AUDIO_LANG = stringPreferencesKey("preferred_audio_lang")
         val PREFERRED_SUBTITLE_LANG = stringPreferencesKey("preferred_subtitle_lang")
+        val PLAYBACK_PROFILE = stringPreferencesKey("playback_profile")
     }
+
+    val playbackProfile: Flow<MpvProfile> = dataStore.data.map { prefs ->
+        val raw = prefs[Keys.PLAYBACK_PROFILE]
+        MpvBuiltInProfiles.fromId(raw)
+    }
+
+    val playbackProfileId: Flow<String> = playbackProfile.map { it.id }
 
     /** Defaults to [OrientationMode.AUTO_BY_VIDEO] if unset or unparseable. */
     val orientationMode: Flow<OrientationMode> = dataStore.data.map { prefs ->
@@ -122,6 +130,12 @@ class UserPreferencesRepository(private val appContext: Context) {
             } else {
                 prefs[Keys.PREFERRED_SUBTITLE_LANG] = code
             }
+        }
+    }
+
+    suspend fun setPlaybackProfileId(profileId: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.PLAYBACK_PROFILE] = profileId
         }
     }
 }
