@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import `is`.xyz.mpv.feature.settings.SettingsScreen
+import `is`.xyz.mpv.ui.HomeScreen
 import `is`.xyz.mpv.ui.PotatoTheme
 
 /**
@@ -79,7 +80,10 @@ class MainActivity : ComponentActivity() {
                 } else {
                     HomeScreen(
                         onOpenFileClick = { openDocumentLauncher.launch(arrayOf("video/*")) },
-                        onSettingsClick = { showSettings = true }
+                        onSettingsClick = { showSettings = true },
+                        onVideoClick = { mediaFile ->
+                            startActivity(PlayerActivity.intentForUri(this, mediaFile.uri))
+                        }
                     )
                 }
             }
