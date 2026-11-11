@@ -2,6 +2,7 @@ package `is`.xyz.mpv.ui
 
 import android.Manifest
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -19,7 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileOpen
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
@@ -39,8 +40,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -66,6 +71,39 @@ fun HomeScreen(
     ),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    var isSearching by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+
+    var filterState by rememberSaveable(stateSaver = LibraryFilterStateSaver) {
+        mutableStateOf(LibraryFilterState())
+    }
+    var isFilterMenuOpen by remember { mutableStateOf(false) }
+
+    val filteredAndSortedVideos by remember {
+        derivedStateOf { applyLibraryFilter(uiState.videos, filterState) }
+    }
+
+    val displayedVideos by remember {
+        derivedStateOf {
+            if (!isSearching || searchQuery.isBlank()) {
+                filteredAndSortedVideos
+            } else {
+                filteredAndSortedVideos.filter {
+                    it.displayName.contains(searchQuery, ignoreCase = true)
+                }
+            }
+        }
+    }
+
+    fun closeSearch() {
+        isSearching = false
+        searchQuery = ""
+    }
+
+    BackHandler(enabled = isSearching) {
+        closeSearch()
+    }
 
     val permissionsToRequest = remember {
         when {
@@ -107,39 +145,68 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Library",
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                },
-                actions = {
-                    IconButton(onClick = { /* TODO: wire search */ }) {
-                        Icon(
-                            imageVector = Icons.Filled.Search,
-                            contentDescription = "Search",
+            if (isSearching) {
+                TopAppBar(
+                    title = {
+                        LibrarySearchField(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            onClose = { closeSearch() },
                         )
-                    }
-                    IconButton(onClick = { /* TODO: wire browse */ }) {
-                        Icon(
-                            imageVector = Icons.Filled.Folder,
-                            contentDescription = "Browse",
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Library",
+                            style = MaterialTheme.typography.titleLarge,
                         )
-                    }
-                    IconButton(onClick = onOpenFileClick) {
-                        Icon(
-                            imageVector = Icons.Filled.FileOpen,
-                            contentDescription = "Open video",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    actionIconContentColor = MaterialTheme.colorScheme.onBackground,
-                ),
-            )
+                    },
+                    actions = {
+                        IconButton(onClick = { isSearching = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = "Search",
+                            )
+                        }
+                        Box {
+                            IconButton(onClick = { isFilterMenuOpen = true }) {
+                                Icon(
+                                    imageVector = Icons.Filled.FilterList,
+                                    contentDescription = "Filter and sort",
+                                    tint = if (!filterState.isDefault) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onBackground
+                                    },
+                                )
+                            }
+                            LibraryFilterMenu(
+                                expanded = isFilterMenuOpen,
+                                filterState = filterState,
+                                onFilterChange = { filterState = it },
+                                onDismiss = { isFilterMenuOpen = false },
+                            )
+                        }
+                        IconButton(onClick = onOpenFileClick) {
+                            Icon(
+                                imageVector = Icons.Filled.FileOpen,
+                                contentDescription = "Open video",
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        actionIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
@@ -256,9 +323,25 @@ fun HomeScreen(
                     }
                 }
 
+                uiState.videos.isNotEmpty() && displayedVideos.isEmpty() -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            text = "No matching videos",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+
                 else -> {
                     VideoGrid(
-                        videos = uiState.videos,
+                        videos = displayedVideos,
                         onVideoClick = onVideoClick,
                         contentPadding = PaddingValues(
                             start = 16.dp,
@@ -349,4 +432,3 @@ private fun FloatingPillNav(
         }
     }
 }
-
