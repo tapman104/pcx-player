@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +23,8 @@ import kotlinx.coroutines.launch
 
 import android.net.Uri
 import com.potato.player.BuildConfig
+import `is`.xyz.mpv.feature.room.PlaybackStateEntity
+import `is`.xyz.mpv.feature.room.PlaybackStateRepository
 import `is`.xyz.mpv.state.VideoDisplayMode
 import `is`.xyz.mpv.state.VideoDisplayState
 import `is`.xyz.mpv.state.VideoTransform
@@ -64,6 +68,30 @@ private data class EngineDisplayState(
     val geometry: VideoGeometry = VideoGeometry(),
 )
 
+private sealed interface PlaybackRestoreState {
+    data object Idle : PlaybackRestoreState
+    data class Loading(val loadId: Long, val videoPath: String) : PlaybackRestoreState
+    data class Loaded(
+        val loadId: Long,
+        val videoPath: String,
+        val saved: PlaybackStateEntity?,
+    ) : PlaybackRestoreState
+}
+
+private data class LangTrackRestoreTuple(
+    val status: EngineStatus,
+    val lang: String?,
+    val trackState: TrackState,
+    val restoreState: PlaybackRestoreState,
+)
+
+private data class PlaybackRestoreTuple(
+    val status: EngineStatus,
+    val restoreState: PlaybackRestoreState,
+    val trackState: TrackState,
+    val progress: PlaybackProgress,
+)
+
 internal fun matchesLanguage(trackLang: String?, targetCode: String): Boolean {
     if (trackLang.isNullOrBlank()) return false
     val cleanedTrackLang = trackLang.trim()
@@ -84,6 +112,7 @@ class PlayerViewModel(
     private val appContext: Context,
     coroutineScope: CoroutineScope? = null,
     private val preferencesRepository: UserPreferencesRepository = UserPreferencesRepository(appContext),
+    private val playbackStateRepository: PlaybackStateRepository = PlaybackStateRepository(appContext),
 ) : ViewModel() {
 
     private val scope = coroutineScope ?: viewModelScope
@@ -108,8 +137,25 @@ class PlayerViewModel(
 
     // Guard flags: set true when the user explicitly selects a track, reset on new file load.
     // Prevents the automatic language-matching collector from overriding a manual selection.
+    @Volatile
     private var userSelectedSubtitle = false
+    @Volatile
     private var userSelectedAudio = false
+
+    private val _restoreState = MutableStateFlow<PlaybackRestoreState>(PlaybackRestoreState.Idle)
+    @Volatile
+    private var currentVideoPath: String? = null
+    @Volatile
+    private var currentLoadId: Long = 0L
+    private var appliedPositionOnReadyLoadId: Long = -1L
+    private var confirmedPositionAfterDurationLoadId: Long = -1L
+    private var appliedAudioOnReadyLoadId: Long = -1L
+    private var confirmedAudioAfterTracksLoadId: Long = -1L
+    private var appliedSubtitleOnReadyLoadId: Long = -1L
+    private var confirmedSubtitleAfterTracksLoadId: Long = -1L
+    private var lastPositionSavedAtMs: Long = 0L
+    private var lastSavedPositionSec: Double? = null
+    internal var nowMsProvider: () -> Long = { System.currentTimeMillis() }
 
     val uiState: StateFlow<PlayerUiState> = combine(
         _explicitFileName,
@@ -245,20 +291,130 @@ class PlayerViewModel(
                 }
             }
         }
+        // Restore per-video saved position and track overrides once the engine reaches Ready.
+        scope.launch {
+            combine(
+                engine.status,
+                _restoreState,
+                eventHandler.trackState,
+                eventHandler.playbackProgress,
+            ) { status, restoreState, trackState, progress ->
+                PlaybackRestoreTuple(status, restoreState, trackState, progress)
+            }.collect { (status, restoreState, trackState, progress) ->
+                if (status !is EngineStatus.Ready) return@collect
+                if (restoreState !is PlaybackRestoreState.Loaded) return@collect
+                val saved = restoreState.saved ?: return@collect
+                val loadId = restoreState.loadId
+
+                if (saved.positionSec > 0.0) {
+                    if (appliedPositionOnReadyLoadId != loadId) {
+                        appliedPositionOnReadyLoadId = loadId
+                        if (progress.durationSec > 0.0) {
+                            confirmedPositionAfterDurationLoadId = loadId
+                        }
+                        engine.seekTo(saved.positionSec)
+                    } else if (
+                        confirmedPositionAfterDurationLoadId != loadId &&
+                        progress.durationSec > 0.0
+                    ) {
+                        confirmedPositionAfterDurationLoadId = loadId
+                        if (progress.positionSec < 1.0) {
+                            engine.seekTo(saved.positionSec)
+                        }
+                    }
+                }
+
+                val savedAudioId = saved.audioTrackId
+                if (savedAudioId != null) {
+                    if (appliedAudioOnReadyLoadId != loadId) {
+                        appliedAudioOnReadyLoadId = loadId
+                        userSelectedAudio = true
+                        engine.selectAudioTrack(savedAudioId)
+                    } else if (
+                        confirmedAudioAfterTracksLoadId != loadId &&
+                        trackState.audioTracks.isNotEmpty()
+                    ) {
+                        confirmedAudioAfterTracksLoadId = loadId
+                        if (trackState.audioTracks.any { it.id == savedAudioId } &&
+                            trackState.selectedAudioId != savedAudioId
+                        ) {
+                            engine.selectAudioTrack(savedAudioId)
+                        }
+                    }
+                }
+
+                val savedSubId = saved.subtitleTrackId
+                if (savedSubId != null) {
+                    if (appliedSubtitleOnReadyLoadId != loadId) {
+                        appliedSubtitleOnReadyLoadId = loadId
+                        userSelectedSubtitle = true
+                        engine.selectSubtitleTrack(savedSubId)
+                    } else if (
+                        confirmedSubtitleAfterTracksLoadId != loadId &&
+                        trackState.subtitleTracks.isNotEmpty()
+                    ) {
+                        confirmedSubtitleAfterTracksLoadId = loadId
+                        if (trackState.subtitleTracks.any { it.id == savedSubId } &&
+                            trackState.selectedSubtitleId != savedSubId
+                        ) {
+                            engine.selectSubtitleTrack(savedSubId)
+                        }
+                    }
+                }
+            }
+        }
+        // Periodically persist playback position (throttled so Room is not written on every tick).
+        scope.launch {
+            combine(
+                engine.status,
+                _restoreState,
+                eventHandler.playbackProgress,
+            ) { status, restoreState, progress ->
+                Triple(status, restoreState, progress)
+            }.collect { (status, restoreState, progress) ->
+                if (status !is EngineStatus.Ready) return@collect
+                if (restoreState !is PlaybackRestoreState.Loaded) return@collect
+                if (progress.positionSec <= 0.0) return@collect
+
+                val savedPos = restoreState.saved?.positionSec ?: 0.0
+                if (savedPos > 0.0 && appliedPositionOnReadyLoadId != restoreState.loadId) return@collect
+                if (savedPos > 0.0 && progress.durationSec > 0.0 && confirmedPositionAfterDurationLoadId != restoreState.loadId) return@collect
+                if (savedPos > 0.0 && confirmedPositionAfterDurationLoadId != restoreState.loadId && progress.positionSec < 1.0) return@collect
+
+                val nowMs = nowMsProvider()
+                if (progress.positionSec == lastSavedPositionSec) return@collect
+                if (nowMs - lastPositionSavedAtMs < POSITION_SAVE_INTERVAL_MS) {
+                    return@collect
+                }
+                lastPositionSavedAtMs = nowMs
+                lastSavedPositionSec = progress.positionSec
+                val path = restoreState.videoPath
+                scope.launch {
+                    playbackStateRepository.updatePosition(path, progress.positionSec)
+                }
+            }
+        }
         // alang/slang/forced reselection are hints to mpv and only work when the
         // file's own track metadata carries a matching language tag — no fallback
         // chain needed, let mpv's own selection (or the match in (B)) handle it.
         scope.launch {
-            combine(engine.status, preferredAudioLang, eventHandler.trackState) { status, lang, trackState ->
-                Triple(status, lang, trackState)
+            combine(
+                engine.status,
+                preferredAudioLang,
+                eventHandler.trackState,
+                _restoreState,
+            ) { status, lang, trackState, restoreState ->
+                LangTrackRestoreTuple(status, lang, trackState, restoreState)
             }
                 .distinctUntilChanged { old, new ->
-                    old.first == new.first &&
-                        old.second == new.second &&
-                        old.third.audioTracks == new.third.audioTracks &&
-                        old.third.selectedAudioId == new.third.selectedAudioId
+                    old.status == new.status &&
+                        old.lang == new.lang &&
+                        old.trackState.audioTracks == new.trackState.audioTracks &&
+                        old.trackState.selectedAudioId == new.trackState.selectedAudioId &&
+                        old.restoreState == new.restoreState
                 }
-                .collect { (status, lang, trackState) ->
+                .collect { (status, lang, trackState, restoreState) ->
+                    if (restoreState is PlaybackRestoreState.Loading) return@collect
                     if (userSelectedAudio) return@collect
                     if (status is EngineStatus.Ready && lang != null) {
                         val matchingTrack = trackState.audioTracks.firstOrNull { track ->
@@ -271,16 +427,23 @@ class PlayerViewModel(
                 }
         }
         scope.launch {
-            combine(engine.status, preferredSubtitleLang, eventHandler.trackState) { status, lang, trackState ->
-                Triple(status, lang, trackState)
+            combine(
+                engine.status,
+                preferredSubtitleLang,
+                eventHandler.trackState,
+                _restoreState,
+            ) { status, lang, trackState, restoreState ->
+                LangTrackRestoreTuple(status, lang, trackState, restoreState)
             }
                 .distinctUntilChanged { old, new ->
-                    old.first == new.first &&
-                        old.second == new.second &&
-                        old.third.subtitleTracks == new.third.subtitleTracks &&
-                        old.third.selectedSubtitleId == new.third.selectedSubtitleId
+                    old.status == new.status &&
+                        old.lang == new.lang &&
+                        old.trackState.subtitleTracks == new.trackState.subtitleTracks &&
+                        old.trackState.selectedSubtitleId == new.trackState.selectedSubtitleId &&
+                        old.restoreState == new.restoreState
                 }
-                .collect { (status, lang, trackState) ->
+                .collect { (status, lang, trackState, restoreState) ->
+                    if (restoreState is PlaybackRestoreState.Loading) return@collect
                     if (userSelectedSubtitle) return@collect
                     if (status is EngineStatus.Ready && lang != null) {
                         val matchingTrack = trackState.subtitleTracks.firstOrNull { track ->
@@ -354,8 +517,13 @@ class PlayerViewModel(
             AppLogger.e(TAG, "Failed to resolve media display name", e)
             return
         }
+        persistCurrentPositionIfReady(scope)
         Log.i(TAG, "loadFile: name=$name")
         AppLogger.i(TAG, "Loading file: $name")
+        currentVideoPath = path
+        val loadId = ++currentLoadId
+        lastPositionSavedAtMs = nowMsProvider()
+        lastSavedPositionSec = null
         _explicitFileName.value = name
         _playbackSpeed.value = 1f
         _videoDisplayState.value = VideoDisplayState()
@@ -365,7 +533,23 @@ class PlayerViewModel(
         userSelectedAudio = false
         // FIX #5: Set isLoadingNewFile true before calling engine.playFile
         _isLoadingNewFile.value = true
+        _restoreState.value = PlaybackRestoreState.Loading(loadId, path)
         engine.playFile(path)
+        scope.launch {
+            val saved = playbackStateRepository.getPlaybackState(path)
+            if (currentLoadId != loadId) return@launch
+            if (saved?.audioTrackId != null) {
+                userSelectedAudio = true
+            }
+            if (saved?.subtitleTrackId != null) {
+                userSelectedSubtitle = true
+            }
+            _restoreState.value = PlaybackRestoreState.Loaded(
+                loadId = loadId,
+                videoPath = path,
+                saved = saved,
+            )
+        }
     }
 
     fun togglePlayPause() {
@@ -374,11 +558,13 @@ class PlayerViewModel(
 
     fun seekTo(positionSec: Double) {
         Log.i(TAG, "seekTo: $positionSec")
+        confirmedPositionAfterDurationLoadId = currentLoadId
         engine.seekTo(positionSec)
     }
 
     fun seekBy(offsetSec: Double) {
         Log.i(TAG, "seekBy: $offsetSec")
+        confirmedPositionAfterDurationLoadId = currentLoadId
         engine.seekBy(offsetSec)
     }
 
@@ -414,12 +600,22 @@ class PlayerViewModel(
 
     fun selectAudioTrack(id: Int) {
         userSelectedAudio = true
+        confirmedAudioAfterTracksLoadId = currentLoadId
         engine.selectAudioTrack(id)
+        val path = currentVideoPath ?: return
+        scope.launch {
+            playbackStateRepository.updateAudioTrack(path, id)
+        }
     }
 
     fun selectSubtitleTrack(id: Int?) {
         userSelectedSubtitle = true
+        confirmedSubtitleAfterTracksLoadId = currentLoadId
         engine.selectSubtitleTrack(id)
+        val path = currentVideoPath ?: return
+        scope.launch {
+            playbackStateRepository.updateSubtitleTrack(path, id)
+        }
     }
 
     fun previewSubFontSize(size: Int) {
@@ -482,9 +678,25 @@ class PlayerViewModel(
             }
     }
 
+    private fun persistCurrentPositionIfReady(targetScope: CoroutineScope) {
+        val path = currentVideoPath ?: return
+        val restoreState = _restoreState.value as? PlaybackRestoreState.Loaded ?: return
+        if (restoreState.videoPath != path) return
+        val currentPos = eventHandler.playbackProgress.value.positionSec
+        if (currentPos <= 0.0 || currentPos == lastSavedPositionSec) return
+        val savedPos = restoreState.saved?.positionSec ?: 0.0
+        if (savedPos > 0.0 && appliedPositionOnReadyLoadId != restoreState.loadId) return
+        if (savedPos > 0.0 && confirmedPositionAfterDurationLoadId != restoreState.loadId && currentPos < 1.0) return
+        lastSavedPositionSec = currentPos
+        targetScope.launch {
+            playbackStateRepository.updatePosition(path, currentPos)
+        }
+    }
+
     // -- Lifecycle -----------------------------------------------------------
 
     override fun onCleared() {
+        persistCurrentPositionIfReady(CoroutineScope(SupervisorJob() + Dispatchers.IO))
         super.onCleared()
         AppLogger.i(TAG, "PlayerViewModel onCleared: destroying engine")
         MPVLib.removeLogObserver(logObserver)
@@ -495,6 +707,7 @@ class PlayerViewModel(
 
     companion object {
         private const val TAG = "PlayerViewModel"
+        private const val POSITION_SAVE_INTERVAL_MS = 5_000L
 
         fun factory(appContext: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
