@@ -513,3 +513,38 @@ picker and Settings navigation.
 
 No new dependencies added. Falls back to ContentResolver.loadThumbnail()
 since Coil wasn't wired into app/build.gradle.kts
+
+**11.11.2026
+
+
+*Add library search to toolbar
+New LibrarySearch.kt: search field UI, replaces toolbar title/actions
+when active, autofocuses keyboard
+Filters video grid by filename, case-insensitive
+Back button and close icon exit search, restore normal toolbar
+
+**Add filter and sort menu to Library toolbar
+New LibraryFilter.kt: SortBy/SortOrder/DurationFilter options, pure
+applyLibraryFilter() transform, Material3 DropdownMenu UI
+HomeScreen.kt: replaced Folder/Browse icon with filter icon, wired
+filter state, applied filters before search so search operates on
+filtered results, widened empty-state check for filter-only empty
+results
+Reset option restores default sort (Date added, Descending, All videos)
+
+*Add per-video playback state persistence with Room
+New Room module under feature/room: AppDatabase, PlaybackStateDao,
+PlaybackStateEntity, PlaybackStateRepository
+Resumes playback position per video (5s throttled save)
+Remembers manually selected audio/subtitle track per video, taking
+priority over global language defaults in UserPreferencesRepository
+PlayerViewModel restores saved state on engine Ready and persists
+track selection changes and position periodically
+Unit tests covering override priority, fallback to global defaults,
+and throttled position saving
+
+*
+
+
+
+
