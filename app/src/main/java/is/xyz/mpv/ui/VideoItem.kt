@@ -11,12 +11,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
@@ -93,6 +95,77 @@ fun VideoItem(
     onClick: (MediaFile) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    VideoItemContainer(
+        mediaFile = mediaFile,
+        onClick = onClick,
+        modifier = modifier,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            VideoThumbnail(
+                mediaFile = mediaFile,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            VideoTitle(displayName = mediaFile.displayName)
+        }
+    }
+}
+
+@Composable
+fun VideoListItem(
+    mediaFile: MediaFile,
+    onClick: (MediaFile) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    VideoItemContainer(
+        mediaFile = mediaFile,
+        onClick = onClick,
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            VideoThumbnail(
+                mediaFile = mediaFile,
+                modifier = Modifier.width(128.dp),
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            VideoTitle(
+                displayName = mediaFile.displayName,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun VideoItemContainer(
+    mediaFile: MediaFile,
+    onClick: (MediaFile) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick(mediaFile) }
+            .padding(4.dp),
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun VideoThumbnail(
+    mediaFile: MediaFile,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     var thumbnail by remember(mediaFile.id) { mutableStateOf<Bitmap?>(null) }
 
@@ -100,64 +173,60 @@ fun VideoItem(
         thumbnail = VideoThumbnailLoader.loadThumbnail(context, mediaFile)
     }
 
-    Column(
+    Box(
         modifier = modifier
-            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick(mediaFile) }
-            .padding(4.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            val bmp = thumbnail
-            if (bmp != null) {
-                Image(
-                    bitmap = bmp.asImageBitmap(),
-                    contentDescription = mediaFile.displayName,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.Movie,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-            }
-
-            if (mediaFile.durationMs > 0) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.75f),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(6.dp)
-                ) {
-                    Text(
-                        text = TimeFormatter.formatTime(mediaFile.durationMs / 1000.0),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
-                }
-            }
+        val bmp = thumbnail
+        if (bmp != null) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = mediaFile.displayName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Movie,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Text(
-            text = mediaFile.displayName,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
+        if (mediaFile.durationMs > 0) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.75f),
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp),
+            ) {
+                Text(
+                    text = TimeFormatter.formatTime(mediaFile.durationMs / 1000.0),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun VideoTitle(
+    displayName: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = displayName,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
 }
 

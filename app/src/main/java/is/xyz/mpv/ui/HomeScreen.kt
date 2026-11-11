@@ -19,8 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
@@ -60,6 +62,8 @@ import `is`.xyz.mpv.feature.library.MediaFile
 import `is`.xyz.mpv.feature.library.MediaLibraryViewModel
 import `is`.xyz.mpv.feature.library.PermissionStatus
 
+enum class LibraryViewMode { GRID, LIST }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
@@ -79,6 +83,7 @@ fun HomeScreen(
         mutableStateOf(LibraryFilterState())
     }
     var isFilterMenuOpen by remember { mutableStateOf(false) }
+    var viewMode by rememberSaveable { mutableStateOf(LibraryViewMode.GRID) }
 
     val filteredAndSortedVideos by remember {
         derivedStateOf { applyLibraryFilter(uiState.videos, filterState) }
@@ -191,6 +196,28 @@ fun HomeScreen(
                                 filterState = filterState,
                                 onFilterChange = { filterState = it },
                                 onDismiss = { isFilterMenuOpen = false },
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                viewMode = if (viewMode == LibraryViewMode.GRID) {
+                                    LibraryViewMode.LIST
+                                } else {
+                                    LibraryViewMode.GRID
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = if (viewMode == LibraryViewMode.GRID) {
+                                    Icons.AutoMirrored.Filled.ViewList
+                                } else {
+                                    Icons.Filled.GridView
+                                },
+                                contentDescription = if (viewMode == LibraryViewMode.GRID) {
+                                    "Switch to list view"
+                                } else {
+                                    "Switch to grid view"
+                                },
                             )
                         }
                         IconButton(onClick = onOpenFileClick) {
@@ -340,16 +367,25 @@ fun HomeScreen(
                 }
 
                 else -> {
-                    VideoGrid(
-                        videos = displayedVideos,
-                        onVideoClick = onVideoClick,
-                        contentPadding = PaddingValues(
-                            start = 16.dp,
-                            top = 16.dp,
-                            end = 16.dp,
-                            bottom = 96.dp,
-                        ),
+                    val contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 16.dp,
+                        end = 16.dp,
+                        bottom = 96.dp,
                     )
+                    when (viewMode) {
+                        LibraryViewMode.GRID -> VideoGrid(
+                            videos = displayedVideos,
+                            onVideoClick = onVideoClick,
+                            contentPadding = contentPadding,
+                        )
+
+                        LibraryViewMode.LIST -> VideoList(
+                            videos = displayedVideos,
+                            onVideoClick = onVideoClick,
+                            contentPadding = contentPadding,
+                        )
+                    }
                 }
             }
 
