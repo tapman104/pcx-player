@@ -543,8 +543,17 @@ track selection changes and position periodically
 Unit tests covering override priority, fallback to global defaults,
 and throttled position saving
 
-*
+*feat: add HomeScreen, VideoItem, and VideoList UI components for media library
 
+*feat(library): add video copy, rename, and delete actions
+
+- Add Copy, Rename, and Delete options to video context menu
+- Implement SAF-based video copying with streaming and partial-file cleanup
+- Handle MediaStore rename and delete permissions across Android versions
+- Add legacy rename rollback and cancellation handling
+- Refresh library after successful operations
+- Add operation progress indicators, confirmation dialogs, and Snackbar feedback
+- Improve MediaStore indexing after copying videos
 
 
 

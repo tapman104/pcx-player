@@ -1,9 +1,11 @@
 package `is`.xyz.mpv.ui
 
 import android.Manifest
+import android.app.Activity
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -28,19 +31,27 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -59,8 +70,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import `is`.xyz.mpv.feature.library.MediaFile
+import `is`.xyz.mpv.feature.library.MediaLibraryEvent
 import `is`.xyz.mpv.feature.library.MediaLibraryViewModel
 import `is`.xyz.mpv.feature.library.PermissionStatus
+import kotlinx.coroutines.launch
 
 enum class LibraryViewMode { GRID, LIST }
 
@@ -84,6 +97,11 @@ fun HomeScreen(
     }
     var isFilterMenuOpen by remember { mutableStateOf(false) }
     var viewMode by rememberSaveable { mutableStateOf(LibraryViewMode.GRID) }
+    var activeMenuVideo by remember { mutableStateOf<MediaFile?>(null) }
+    var renameDialogVideoId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var deleteDialogVideoId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val filteredAndSortedVideos by remember {
         derivedStateOf { applyLibraryFilter(uiState.videos, filterState) }
@@ -99,6 +117,13 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    val renameDialogVideo = renameDialogVideoId?.let { id ->
+        uiState.videos.firstOrNull { it.id == id }
+    }
+    val deleteDialogVideo = deleteDialogVideoId?.let { id ->
+        uiState.videos.firstOrNull { it.id == id }
     }
 
     fun closeSearch() {
@@ -135,6 +160,51 @@ fun HomeScreen(
         viewModel.loadVideos()
     }
 
+    val copyFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { treeUri ->
+        viewModel.onCopyDestinationSelected(treeUri)
+    }
+
+    val intentSenderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        viewModel.onIntentSenderResult(result.resultCode == Activity.RESULT_OK)
+    }
+
+    val writePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        viewModel.onWriteStoragePermissionResult(granted)
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is MediaLibraryEvent.LaunchIntentSender -> {
+                    try {
+                        intentSenderLauncher.launch(
+                            IntentSenderRequest.Builder(event.intentSender).build()
+                        )
+                    } catch (e: Exception) {
+                        viewModel.onExternalActionError("Unable to open system permission dialog")
+                    }
+                }
+
+                is MediaLibraryEvent.RequestWriteStoragePermission -> {
+                    writePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+
+                is MediaLibraryEvent.ShowMessage -> {
+                    launch {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        snackbarHostState.showSnackbar(event.message)
+                    }
+                }
+            }
+        }
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -149,6 +219,14 @@ fun HomeScreen(
     }
 
     Scaffold(
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = 84.dp),
+            )
+        },
         topBar = {
             if (isSearching) {
                 TopAppBar(
@@ -373,20 +451,64 @@ fun HomeScreen(
                         end = 16.dp,
                         bottom = 96.dp,
                     )
+                    val handleCopy: (MediaFile) -> Unit = { video ->
+                        activeMenuVideo = null
+                        if (viewModel.prepareCopy(video)) {
+                            try {
+                                copyFolderLauncher.launch(null)
+                            } catch (e: Exception) {
+                                viewModel.onExternalActionError("No folder picker available on this device")
+                            }
+                        }
+                    }
+                    val handleRename: (MediaFile) -> Unit = { video ->
+                        activeMenuVideo = null
+                        renameDialogVideoId = video.id
+                    }
+                    val handleDelete: (MediaFile) -> Unit = { video ->
+                        activeMenuVideo = null
+                        // On Android 11+ (API 30+), MediaStore.createDeleteRequest shows the system
+                        // confirmation dialog directly, so only show an in-app confirmation on API < 30.
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            viewModel.deleteVideo(video)
+                        } else {
+                            deleteDialogVideoId = video.id
+                        }
+                    }
                     when (viewMode) {
                         LibraryViewMode.GRID -> VideoGrid(
                             videos = displayedVideos,
+                            menuVideo = activeMenuVideo,
                             onVideoClick = onVideoClick,
+                            onMenuOpen = { activeMenuVideo = it },
+                            onMenuDismiss = { activeMenuVideo = null },
+                            onCopy = handleCopy,
+                            onRename = handleRename,
+                            onDelete = handleDelete,
                             contentPadding = contentPadding,
                         )
 
                         LibraryViewMode.LIST -> VideoList(
                             videos = displayedVideos,
+                            menuVideo = activeMenuVideo,
                             onVideoClick = onVideoClick,
+                            onMenuOpen = { activeMenuVideo = it },
+                            onMenuDismiss = { activeMenuVideo = null },
+                            onCopy = handleCopy,
+                            onRename = handleRename,
+                            onDelete = handleDelete,
                             contentPadding = contentPadding,
                         )
                     }
                 }
+            }
+
+            if (uiState.isOperating) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
+                )
             }
 
             FloatingPillNav(
@@ -396,6 +518,127 @@ fun HomeScreen(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    }
+
+    if (renameDialogVideo != null) {
+        RenameVideoDialog(
+            mediaFile = renameDialogVideo,
+            onDismiss = { renameDialogVideoId = null },
+            onConfirm = { newFullName ->
+                renameDialogVideoId = null
+                viewModel.renameVideo(renameDialogVideo, newFullName)
+            },
+        )
+    }
+
+    if (deleteDialogVideo != null) {
+        DeleteConfirmDialog(
+            mediaFile = deleteDialogVideo,
+            onDismiss = { deleteDialogVideoId = null },
+            onConfirm = {
+                deleteDialogVideoId = null
+                viewModel.deleteVideo(deleteDialogVideo)
+            },
+        )
+    }
+}
+
+@Composable
+private fun RenameVideoDialog(
+    mediaFile: MediaFile,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    val (initialBaseName, extension) = remember(mediaFile.id, mediaFile.displayName) {
+        splitFileName(mediaFile.displayName)
+    }
+    var nameInput by remember(mediaFile.id, mediaFile.displayName) {
+        mutableStateOf(initialBaseName)
+    }
+
+    val trimmed = nameInput.trim()
+    val hasInvalidChars = trimmed.any { it == '/' || it == '\\' || it == '\u0000' } ||
+        trimmed == "." || trimmed == ".."
+    val newFullName = trimmed + extension
+    val isUnchanged = newFullName == mediaFile.displayName
+    val isError = hasInvalidChars || (nameInput.isNotEmpty() && trimmed.isEmpty())
+    val canSubmit = trimmed.isNotEmpty() && !hasInvalidChars && !isUnchanged
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename video") },
+        text = {
+            OutlinedTextField(
+                value = nameInput,
+                onValueChange = { nameInput = it },
+                label = { Text("File name") },
+                suffix = if (extension.isNotEmpty()) {
+                    { Text(extension) }
+                } else {
+                    null
+                },
+                singleLine = true,
+                isError = isError,
+                supportingText = if (hasInvalidChars) {
+                    { Text("File name contains invalid characters") }
+                } else {
+                    null
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(newFullName) },
+                enabled = canSubmit,
+            ) {
+                Text("Rename")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeleteConfirmDialog(
+    mediaFile: MediaFile,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete video?") },
+        text = {
+            Text("Delete \"${mediaFile.displayName}\"? This will permanently remove the video from your device.")
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+private fun splitFileName(displayName: String): Pair<String, String> {
+    val dotIndex = displayName.lastIndexOf('.')
+    return if (dotIndex > 0 && dotIndex < displayName.length - 1) {
+        displayName.substring(0, dotIndex) to displayName.substring(dotIndex)
+    } else {
+        displayName to ""
     }
 }
 

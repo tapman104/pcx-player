@@ -8,5 +8,6 @@ data class MediaFile(
     val displayName: String,
     val durationMs: Long,
     val dateAdded: Long,
+    val mimeType: String? = null,
 )
 

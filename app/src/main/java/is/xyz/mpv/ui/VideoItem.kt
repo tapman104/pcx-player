@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package `is`.xyz.mpv.ui
 
 import android.content.Context
@@ -6,9 +8,10 @@ import android.os.Build
 import android.provider.MediaStore
 import android.util.LruCache
 import android.util.Size
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,11 +21,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -92,12 +99,24 @@ private object VideoThumbnailLoader {
 @Composable
 fun VideoItem(
     mediaFile: MediaFile,
+    isMenuOpen: Boolean,
     onClick: (MediaFile) -> Unit,
+    onMenuOpen: (MediaFile) -> Unit,
+    onMenuDismiss: () -> Unit,
+    onCopy: (MediaFile) -> Unit,
+    onRename: (MediaFile) -> Unit,
+    onDelete: (MediaFile) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     VideoItemContainer(
         mediaFile = mediaFile,
+        isMenuOpen = isMenuOpen,
         onClick = onClick,
+        onMenuOpen = onMenuOpen,
+        onMenuDismiss = onMenuDismiss,
+        onCopy = onCopy,
+        onRename = onRename,
+        onDelete = onDelete,
         modifier = modifier,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -116,12 +135,24 @@ fun VideoItem(
 @Composable
 fun VideoListItem(
     mediaFile: MediaFile,
+    isMenuOpen: Boolean,
     onClick: (MediaFile) -> Unit,
+    onMenuOpen: (MediaFile) -> Unit,
+    onMenuDismiss: () -> Unit,
+    onCopy: (MediaFile) -> Unit,
+    onRename: (MediaFile) -> Unit,
+    onDelete: (MediaFile) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     VideoItemContainer(
         mediaFile = mediaFile,
+        isMenuOpen = isMenuOpen,
         onClick = onClick,
+        onMenuOpen = onMenuOpen,
+        onMenuDismiss = onMenuDismiss,
+        onCopy = onCopy,
+        onRename = onRename,
+        onDelete = onDelete,
         modifier = modifier,
     ) {
         Row(
@@ -137,7 +168,9 @@ fun VideoListItem(
 
             VideoTitle(
                 displayName = mediaFile.displayName,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 44.dp),
             )
         }
     }
@@ -146,7 +179,13 @@ fun VideoListItem(
 @Composable
 private fun VideoItemContainer(
     mediaFile: MediaFile,
+    isMenuOpen: Boolean,
     onClick: (MediaFile) -> Unit,
+    onMenuOpen: (MediaFile) -> Unit,
+    onMenuDismiss: () -> Unit,
+    onCopy: (MediaFile) -> Unit,
+    onRename: (MediaFile) -> Unit,
+    onDelete: (MediaFile) -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
@@ -154,10 +193,47 @@ private fun VideoItemContainer(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick(mediaFile) }
+            .combinedClickable(
+                onClick = { onClick(mediaFile) },
+                onLongClick = { onMenuOpen(mediaFile) },
+            )
             .padding(4.dp),
     ) {
         content()
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(2.dp),
+        ) {
+            IconButton(
+                onClick = { onMenuOpen(mediaFile) },
+                modifier = Modifier.size(36.dp),
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "More actions for ${mediaFile.displayName}",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .size(18.dp),
+                    )
+                }
+            }
+
+            VideoActionsMenu(
+                mediaFile = mediaFile,
+                expanded = isMenuOpen,
+                onDismiss = onMenuDismiss,
+                onCopy = onCopy,
+                onRename = onRename,
+                onDelete = onDelete,
+            )
+        }
     }
 }
 

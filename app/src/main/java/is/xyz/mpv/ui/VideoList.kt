@@ -13,7 +13,13 @@ import `is`.xyz.mpv.feature.library.MediaFile
 @Composable
 fun VideoList(
     videos: List<MediaFile>,
+    menuVideo: MediaFile?,
     onVideoClick: (MediaFile) -> Unit,
+    onMenuOpen: (MediaFile) -> Unit,
+    onMenuDismiss: () -> Unit,
+    onCopy: (MediaFile) -> Unit,
+    onRename: (MediaFile) -> Unit,
+    onDelete: (MediaFile) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp),
 ) {
@@ -28,7 +34,13 @@ fun VideoList(
         ) { video ->
             VideoListItem(
                 mediaFile = video,
+                isMenuOpen = menuVideo?.id == video.id,
                 onClick = onVideoClick,
+                onMenuOpen = onMenuOpen,
+                onMenuDismiss = onMenuDismiss,
+                onCopy = onCopy,
+                onRename = onRename,
+                onDelete = onDelete,
             )
         }
     }
