@@ -14,15 +14,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
@@ -36,9 +41,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -62,8 +69,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -230,16 +240,35 @@ fun HomeScreen(
         topBar = {
             if (isSearching) {
                 TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { closeSearch() }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Close search",
+                            )
+                        }
+                    },
                     title = {
                         LibrarySearchField(
                             query = searchQuery,
                             onQueryChange = { searchQuery = it },
-                            onClose = { closeSearch() },
                         )
+                    },
+                    actions = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Clear,
+                                    contentDescription = "Clear search",
+                                )
+                            }
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
                         titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        actionIconContentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 )
             } else {
@@ -248,6 +277,9 @@ fun HomeScreen(
                         Text(
                             text = "Library",
                             style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     },
                     actions = {
@@ -265,7 +297,7 @@ fun HomeScreen(
                                     tint = if (!filterState.isDefault) {
                                         MaterialTheme.colorScheme.primary
                                     } else {
-                                        MaterialTheme.colorScheme.onBackground
+                                        LocalContentColor.current
                                     },
                                 )
                             }
@@ -315,208 +347,145 @@ fun HomeScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding),
         ) {
-            when {
-                uiState.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-
-                uiState.permissionStatus == PermissionStatus.DENIED -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Lock,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Permission Required",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Allow access to your video library to view and play videos.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = { permissionLauncher.launch(permissionsToRequest) }) {
-                            Text("Grant Permission")
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                when {
+                    uiState.isLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
                         }
                     }
-                }
 
-                uiState.permissionStatus == PermissionStatus.PARTIAL && uiState.videos.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.VideoLibrary,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Limited Access Granted",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "No videos are currently selected. Grant full access or select videos to display.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Button(onClick = { permissionLauncher.launch(permissionsToRequest) }) {
-                            Text("Select Videos")
-                        }
-                    }
-                }
-
-                uiState.videos.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.VideoLibrary,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "No videos found",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Videos stored on this device will appear here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uiState.permissionStatus == PermissionStatus.DENIED -> {
+                        LibraryStatusState(
+                            icon = Icons.Filled.Lock,
+                            title = "Permission Required",
+                            message = "Allow access to your video library to view and play videos.",
+                            actionLabel = "Grant Permission",
+                            onAction = { permissionLauncher.launch(permissionsToRequest) },
                         )
                     }
-                }
 
-                uiState.videos.isNotEmpty() && displayedVideos.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            text = "No matching videos",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
+                    uiState.permissionStatus == PermissionStatus.PARTIAL && uiState.videos.isEmpty() -> {
+                        LibraryStatusState(
+                            icon = Icons.Filled.VideoLibrary,
+                            title = "Limited Access Granted",
+                            message = "No videos are currently selected. Grant full access or select videos to display.",
+                            actionLabel = "Select Videos",
+                            onAction = { permissionLauncher.launch(permissionsToRequest) },
                         )
                     }
-                }
 
-                else -> {
-                    val contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = 16.dp,
-                        end = 16.dp,
-                        bottom = 96.dp,
-                    )
-                    val handleCopy: (MediaFile) -> Unit = { video ->
-                        activeMenuVideo = null
-                        if (viewModel.prepareCopy(video)) {
-                            try {
-                                copyFolderLauncher.launch(null)
-                            } catch (e: Exception) {
-                                viewModel.onExternalActionError("No folder picker available on this device")
+                    uiState.videos.isEmpty() -> {
+                        LibraryStatusState(
+                            icon = Icons.Filled.VideoLibrary,
+                            title = "No videos found",
+                            message = "Videos stored on this device will appear here.",
+                        )
+                    }
+
+                    uiState.videos.isNotEmpty() && displayedVideos.isEmpty() -> {
+                        LibraryStatusState(
+                            icon = Icons.Filled.Search,
+                            title = "No matching videos",
+                            message = "Try adjusting your search or filter.",
+                        )
+                    }
+
+                    else -> {
+                        val handleCopy: (MediaFile) -> Unit = { video ->
+                            activeMenuVideo = null
+                            if (viewModel.prepareCopy(video)) {
+                                try {
+                                    copyFolderLauncher.launch(null)
+                                } catch (e: Exception) {
+                                    viewModel.onExternalActionError("No folder picker available on this device")
+                                }
                             }
                         }
-                    }
-                    val handleRename: (MediaFile) -> Unit = { video ->
-                        activeMenuVideo = null
-                        renameDialogVideoId = video.id
-                    }
-                    val handleDelete: (MediaFile) -> Unit = { video ->
-                        activeMenuVideo = null
-                        // On Android 11+ (API 30+), MediaStore.createDeleteRequest shows the system
-                        // confirmation dialog directly, so only show an in-app confirmation on API < 30.
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            viewModel.deleteVideo(video)
-                        } else {
-                            deleteDialogVideoId = video.id
+                        val handleRename: (MediaFile) -> Unit = { video ->
+                            activeMenuVideo = null
+                            renameDialogVideoId = video.id
+                        }
+                        val handleDelete: (MediaFile) -> Unit = { video ->
+                            activeMenuVideo = null
+                            // On Android 11+ (API 30+), MediaStore.createDeleteRequest shows the system
+                            // confirmation dialog directly, so only show an in-app confirmation on API < 30.
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                viewModel.deleteVideo(video)
+                            } else {
+                                deleteDialogVideoId = video.id
+                            }
+                        }
+                        when (viewMode) {
+                            LibraryViewMode.GRID -> VideoGrid(
+                                videos = displayedVideos,
+                                menuVideo = activeMenuVideo,
+                                onVideoClick = onVideoClick,
+                                onMenuOpen = { activeMenuVideo = it },
+                                onMenuDismiss = { activeMenuVideo = null },
+                                onCopy = handleCopy,
+                                onRename = handleRename,
+                                onDelete = handleDelete,
+                                contentPadding = PaddingValues(
+                                    start = 16.dp,
+                                    top = 12.dp,
+                                    end = 16.dp,
+                                    bottom = 96.dp,
+                                ),
+                            )
+
+                            LibraryViewMode.LIST -> VideoList(
+                                videos = displayedVideos,
+                                menuVideo = activeMenuVideo,
+                                onVideoClick = onVideoClick,
+                                onMenuOpen = { activeMenuVideo = it },
+                                onMenuDismiss = { activeMenuVideo = null },
+                                onCopy = handleCopy,
+                                onRename = handleRename,
+                                onDelete = handleDelete,
+                                contentPadding = PaddingValues(
+                                    start = 8.dp,
+                                    top = 6.dp,
+                                    end = 8.dp,
+                                    bottom = 96.dp,
+                                ),
+                            )
                         }
                     }
-                    when (viewMode) {
-                        LibraryViewMode.GRID -> VideoGrid(
-                            videos = displayedVideos,
-                            menuVideo = activeMenuVideo,
-                            onVideoClick = onVideoClick,
-                            onMenuOpen = { activeMenuVideo = it },
-                            onMenuDismiss = { activeMenuVideo = null },
-                            onCopy = handleCopy,
-                            onRename = handleRename,
-                            onDelete = handleDelete,
-                            contentPadding = contentPadding,
-                        )
-
-                        LibraryViewMode.LIST -> VideoList(
-                            videos = displayedVideos,
-                            menuVideo = activeMenuVideo,
-                            onVideoClick = onVideoClick,
-                            onMenuOpen = { activeMenuVideo = it },
-                            onMenuDismiss = { activeMenuVideo = null },
-                            onCopy = handleCopy,
-                            onRename = handleRename,
-                            onDelete = handleDelete,
-                            contentPadding = contentPadding,
-                        )
-                    }
                 }
-            }
 
-            if (uiState.isOperating) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter),
+                if (uiState.isOperating) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter),
+                    )
+                }
+
+                FloatingPillNav(
+                    selectedTab = 0,
+                    onHomeClick = { /* Already on Home */ },
+                    onSettingsClick = onSettingsClick,
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
-
-            FloatingPillNav(
-                selectedTab = 0,
-                onHomeClick = { /* Already on Home */ },
-                onSettingsClick = onSettingsClick,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
         }
     }
 
@@ -639,6 +608,52 @@ private fun splitFileName(displayName: String): Pair<String, String> {
         displayName.substring(0, dotIndex) to displayName.substring(dotIndex)
     } else {
         displayName to ""
+    }
+}
+
+@Composable
+private fun LibraryStatusState(
+    icon: ImageVector,
+    title: String,
+    message: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 88.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(56.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (actionLabel != null && onAction != null) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = onAction) {
+                Text(actionLabel)
+            }
+        }
     }
 }
 

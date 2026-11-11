@@ -555,5 +555,6 @@ and throttled position saving
 - Add operation progress indicators, confirmation dialogs, and Snackbar feedback
 - Improve MediaStore indexing after copying videos
 
+*feat(library): refine home screen, search, and video list UI
 
 
