@@ -7,7 +7,7 @@ import androidx.core.content.ContextCompat
 
 data class MpvOptions(
     val gpuNext: Boolean = false,
-    val hardwareDecoding: DecoderMode = DecoderMode.AUTO,
+    val hardwareDecoding: DecoderMode = DecoderMode.HW_PLUS,
     val audioLang: String? = null,
     val subtitleLang: String? = null,
     val videoScale: String? = null,
@@ -96,10 +96,9 @@ class MpvOptionsConfigurator(context: Context) {
         private const val TAG = "MpvOptionsConfigurator"
 
         fun hwdecOptionValue(mode: DecoderMode): String = when (mode) {
-            DecoderMode.AUTO -> "auto-safe"
-            DecoderMode.HARDWARE -> "mediacodec"
-            DecoderMode.HARDWARE_COPY -> "mediacodec-copy"
-            DecoderMode.SOFTWARE -> "no"
+            DecoderMode.HW_PLUS -> "mediacodec"
+            DecoderMode.HW -> "mediacodec-copy"
+            DecoderMode.SW -> "no"
         }
     }
 }

@@ -53,6 +53,9 @@ open class MpvEngine(
     private val _status = MutableStateFlow<EngineStatus>(EngineStatus.NotStarted)
     val status: StateFlow<EngineStatus> = _status.asStateFlow()
 
+    private val _hwdecCurrent = MutableStateFlow<String?>(null)
+    val hwdecCurrent: StateFlow<String?> = _hwdecCurrent.asStateFlow()
+
     val isReady: Boolean get() = _status.value is EngineStatus.Ready
 
     private var surfaceAttachmentState: SurfaceAttachmentState = SurfaceAttachmentState.Detached
@@ -289,6 +292,7 @@ open class MpvEngine(
         try {
             MPVLib.destroy()
             eventHandler.reset()
+            _hwdecCurrent.value = null
             surfaceAttachmentState = SurfaceAttachmentState.Detached
             _status.value = successStatus
         } catch (e: Throwable) {
@@ -308,6 +312,13 @@ open class MpvEngine(
 
     protected open fun observeProperties() {
         MPVLib.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+        MPVLib.observeProperty("hwdec-current", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+    }
+
+    override fun eventProperty(property: String, value: String) {
+        if (property == "hwdec-current") {
+            _hwdecCurrent.value = value
+        }
     }
 
     /**

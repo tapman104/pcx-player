@@ -243,7 +243,7 @@ class PlayerViewModel(
     val preferredSubtitleLang: StateFlow<String?> = preferencesRepository.preferredSubtitleLang
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
     val decoderMode: StateFlow<DecoderMode> = preferencesRepository.decoderMode
-        .stateIn(scope, SharingStarted.WhileSubscribed(5000), DecoderMode.AUTO)
+        .stateIn(scope, SharingStarted.WhileSubscribed(5000), DecoderMode.HW_PLUS)
 
     init {
         AppLogger.i(TAG, "PlayerViewModel initialized")
@@ -472,11 +472,13 @@ class PlayerViewModel(
     private fun initEngine() {
         scope.launch {
             try {
+                preferencesRepository.migrateLegacyDecoderModeIfNeeded()
                 val profile = preferencesRepository.playbackProfile.first()
+                val decoder = preferencesRepository.decoderMode.first()
                 engine.initialize(
                     configDir = appContext.filesDir.path,
                     cacheDir  = appContext.cacheDir.path,
-                    options   = profile.options,
+                    options   = profile.options.copy(hardwareDecoding = decoder),
                 )
                 if (engine.isReady) {
                     Log.i(TAG, "Engine init success with profile: ${profile.name}")

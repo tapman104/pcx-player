@@ -66,7 +66,7 @@ fun MoreOptionsSheet(
     isPipModeActive: Boolean = false,
     onLockClick: (() -> Unit)? = null,
     onPipModeClick: (() -> Unit)? = null,
-    decoderMode: DecoderMode = DecoderMode.AUTO,
+    decoderMode: DecoderMode = DecoderMode.HW_PLUS,
     onDecoderModeChange: ((DecoderMode) -> Unit)? = null,
 ) {
     var currentView by remember { mutableStateOf(MoreOptionsSheetView.MAIN) }

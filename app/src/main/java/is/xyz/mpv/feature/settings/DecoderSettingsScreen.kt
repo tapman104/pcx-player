@@ -36,7 +36,7 @@ fun DecoderSettingsScreen(
     onBackClick: () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val decoderMode by preferencesRepository.decoderMode.collectAsState(initial = DecoderMode.AUTO)
+    val decoderMode by preferencesRepository.decoderMode.collectAsState(initial = DecoderMode.HW_PLUS)
 
     Scaffold(
         topBar = {

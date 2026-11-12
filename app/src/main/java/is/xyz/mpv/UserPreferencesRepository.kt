@@ -23,17 +23,15 @@ enum class ThemeMode {
 }
 
 enum class DecoderMode {
-    AUTO,
-    HARDWARE,
-    HARDWARE_COPY,
-    SOFTWARE;
+    HW_PLUS,
+    HW,
+    SW;
 
     val displayName: String
         get() = when (this) {
-            AUTO -> "Auto"
-            HARDWARE -> "HW"
-            HARDWARE_COPY -> "HW+"
-            SOFTWARE -> "SW"
+            HW_PLUS -> "HW+"
+            HW -> "HW"
+            SW -> "SW"
         }
 }
 
@@ -82,10 +80,15 @@ class UserPreferencesRepository(private val appContext: Context) {
     val amoledEnabled: Flow<Boolean> = dataStore.data.map { it[Keys.AMOLED_ENABLED] ?: false }
 
     val decoderMode: Flow<DecoderMode> = dataStore.data.map { prefs ->
-        val raw = prefs[Keys.DECODER_MODE]
-        raw?.let { stored ->
-            runCatching { DecoderMode.valueOf(stored) }.getOrNull()
-        } ?: DecoderMode.AUTO
+        when (prefs[Keys.DECODER_MODE]) {
+            "HW_PLUS" -> DecoderMode.HW_PLUS
+            "HW" -> DecoderMode.HW
+            "SW" -> DecoderMode.SW
+            "AUTO", "HARDWARE" -> DecoderMode.HW_PLUS
+            "HARDWARE_COPY" -> DecoderMode.HW
+            "SOFTWARE" -> DecoderMode.SW
+            else -> DecoderMode.HW_PLUS
+        }
     }
 
     val subFontSize: Flow<Int> = dataStore.data.map { it[Keys.SUB_FONT_SIZE] ?: 55 }
@@ -113,6 +116,20 @@ class UserPreferencesRepository(private val appContext: Context) {
     suspend fun setDecoderMode(mode: DecoderMode) {
         dataStore.edit { prefs ->
             prefs[Keys.DECODER_MODE] = mode.name
+        }
+    }
+
+    suspend fun migrateLegacyDecoderModeIfNeeded() {
+        dataStore.edit { prefs ->
+            val migrated = when (prefs[Keys.DECODER_MODE]) {
+                "AUTO", "HARDWARE" -> DecoderMode.HW_PLUS.name
+                "HARDWARE_COPY" -> DecoderMode.HW.name
+                "SOFTWARE" -> DecoderMode.SW.name
+                else -> null
+            }
+            if (migrated != null) {
+                prefs[Keys.DECODER_MODE] = migrated
+            }
         }
     }
 

@@ -557,4 +557,5 @@ and throttled position saving
 
 *feat(library): refine home screen, search, and video list UI
 
+*refactor: simplify decoder mode configuration
 
