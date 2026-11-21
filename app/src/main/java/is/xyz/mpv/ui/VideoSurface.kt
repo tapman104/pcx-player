@@ -24,6 +24,9 @@ fun VideoSurface(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
                 MpvSurfaceView(context, engine)
+            },
+            onRelease = { view ->
+                view.release()
             }
         )
     }

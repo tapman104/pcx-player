@@ -475,10 +475,20 @@ class PlayerViewModel(
                 preferencesRepository.migrateLegacyDecoderModeIfNeeded()
                 val profile = preferencesRepository.playbackProfile.first()
                 val decoder = preferencesRepository.decoderMode.first()
+                val renderer = preferencesRepository.rendererMode.first()
+                val fastDecode = preferencesRepository.fastDecode.first()
+                val debanding = preferencesRepository.debanding.first()
                 engine.initialize(
                     configDir = appContext.filesDir.path,
                     cacheDir  = appContext.cacheDir.path,
-                    options   = profile.options.copy(hardwareDecoding = decoder),
+                    options   = MpvOptions(
+                        hardwareDecoding = decoder,
+                        gpuNext = renderer == RendererMode.GPU_NEXT,
+                        videoScale = profile.videoScale,
+                        videoDownscale = profile.videoDownscale,
+                        fastDecode = fastDecode,
+                        debanding = if (debanding) Debanding.GPU else Debanding.NONE,
+                    ),
                 )
                 if (engine.isReady) {
                     Log.i(TAG, "Engine init success with profile: ${profile.name}")
@@ -700,6 +710,7 @@ class PlayerViewModel(
     override fun onCleared() {
         persistCurrentPositionIfReady(CoroutineScope(SupervisorJob() + Dispatchers.IO))
         super.onCleared()
+        Log.d(TAG, "onCleared: destroying engine")
         AppLogger.i(TAG, "PlayerViewModel onCleared: destroying engine")
         MPVLib.removeLogObserver(logObserver)
         engine.destroy()

@@ -35,6 +35,17 @@ enum class DecoderMode {
         }
 }
 
+enum class RendererMode {
+    GPU,
+    GPU_NEXT;
+
+    val displayName: String
+        get() = when (this) {
+            GPU -> "GPU"
+            GPU_NEXT -> "GPU-next"
+        }
+}
+
 /**
  * Minimal preferences repository — orientation mode only for now.
  * Expand with additional keys as more persisted settings are added.
@@ -49,6 +60,9 @@ class UserPreferencesRepository(private val appContext: Context) {
         val SUB_POS = intPreferencesKey("sub_pos")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val DECODER_MODE = stringPreferencesKey("decoder_mode")
+        val RENDERER_MODE = stringPreferencesKey("renderer_mode")
+        val FAST_DECODE = booleanPreferencesKey("fast_decode")
+        val DEBANDING = booleanPreferencesKey("debanding")
         val AMOLED_ENABLED = booleanPreferencesKey("amoled_enabled")
         val PREFERRED_AUDIO_LANG = stringPreferencesKey("preferred_audio_lang")
         val PREFERRED_SUBTITLE_LANG = stringPreferencesKey("preferred_subtitle_lang")
@@ -91,6 +105,17 @@ class UserPreferencesRepository(private val appContext: Context) {
         }
     }
 
+    val rendererMode: Flow<RendererMode> = dataStore.data.map { prefs ->
+        when (prefs[Keys.RENDERER_MODE]) {
+            "GPU" -> RendererMode.GPU
+            "GPU_NEXT" -> RendererMode.GPU_NEXT
+            else -> RendererMode.GPU
+        }
+    }
+
+    val fastDecode: Flow<Boolean> = dataStore.data.map { it[Keys.FAST_DECODE] ?: false }
+    val debanding: Flow<Boolean> = dataStore.data.map { it[Keys.DEBANDING] ?: false }
+
     val subFontSize: Flow<Int> = dataStore.data.map { it[Keys.SUB_FONT_SIZE] ?: 55 }
     val subPos: Flow<Int> = dataStore.data.map { it[Keys.SUB_POS] ?: 100 }
 
@@ -117,6 +142,20 @@ class UserPreferencesRepository(private val appContext: Context) {
         dataStore.edit { prefs ->
             prefs[Keys.DECODER_MODE] = mode.name
         }
+    }
+
+    suspend fun setRendererMode(mode: RendererMode) {
+        dataStore.edit { prefs ->
+            prefs[Keys.RENDERER_MODE] = mode.name
+        }
+    }
+
+    suspend fun setFastDecode(enabled: Boolean) {
+        dataStore.edit { it[Keys.FAST_DECODE] = enabled }
+    }
+
+    suspend fun setDebanding(enabled: Boolean) {
+        dataStore.edit { it[Keys.DEBANDING] = enabled }
     }
 
     suspend fun migrateLegacyDecoderModeIfNeeded() {

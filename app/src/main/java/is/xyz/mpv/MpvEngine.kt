@@ -206,6 +206,7 @@ open class MpvEngine(
         Log.w(TAG, "attaching surface")
         MPVLib.attachSurface(surface)
         surfaceAttachmentState = SurfaceAttachmentState.Attached
+        Log.d(TAG, "attachSurface: surface attached")
         // This forces mpv to render subs/osd/whatever into our surface even if it would ordinarily not
         MPVLib.setPropertyString("force-window", "yes")
 
@@ -226,11 +227,13 @@ open class MpvEngine(
 
     private fun detachSurface() {
         try {
+            Log.d(TAG, "detachSurface: calling MPVLib.detachSurface()")
             MPVLib.setPropertyString("pause", "yes")
             MPVLib.setPropertyString("vo", "null")
             MPVLib.setPropertyString("force-window", "no")
             MPVLib.detachSurface()
             surfaceAttachmentState = SurfaceAttachmentState.Detached
+            Log.d(TAG, "detachSurface: surface detached successfully")
         } catch (e: Exception) {
             surfaceAttachmentState = SurfaceAttachmentState.DetachFailed(e)
             Log.e(TAG, "Error detaching surface: native detach failed; state set to DetachFailed", e)
@@ -250,6 +253,7 @@ open class MpvEngine(
      */
     fun destroy() {
         val currentStatus = _status.value
+        Log.d(TAG, "destroy called: currentStatus=$currentStatus, attachment=$surfaceAttachmentState")
         if (currentStatus is EngineStatus.NotStarted || currentStatus is EngineStatus.Failed) {
             return
         }
@@ -286,6 +290,7 @@ open class MpvEngine(
     private fun performDestruction(
         successStatus: EngineStatus = EngineStatus.NotStarted,
     ) {
+        Log.d(TAG, "performDestruction: destroying MPVLib")
         MPVLib.removeObserver(this)
         MPVLib.removeObserver(eventHandler)
 
@@ -295,6 +300,7 @@ open class MpvEngine(
             _hwdecCurrent.value = null
             surfaceAttachmentState = SurfaceAttachmentState.Detached
             _status.value = successStatus
+            Log.d(TAG, "performDestruction: MPVLib destroyed successfully (status=$successStatus)")
         } catch (e: Throwable) {
             val reason = e.message ?: "Unknown destruction error"
             Log.e(TAG, "Error destroying MPVLib: $reason", e)
@@ -503,6 +509,7 @@ open class MpvEngine(
      * pending file. Must be called on the designated main thread.
      */
     fun onSurfaceCreated(surface: Surface) {
+        Log.d(TAG, "onSurfaceCreated: isReady=$isReady")
         if (!isReady) {
             Log.i(TAG, "Surface created before engine is Ready; caching as pending")
             pendingSurface = surface
@@ -512,6 +519,7 @@ open class MpvEngine(
     }
 
     fun onSurfaceDestroyed() {
+        Log.d(TAG, "onSurfaceDestroyed: attachment=$surfaceAttachmentState, isReady=$isReady")
         Log.w(TAG, "detaching surface")
         pendingSurface = null
         if (surfaceAttachmentState !is SurfaceAttachmentState.Attached) return
