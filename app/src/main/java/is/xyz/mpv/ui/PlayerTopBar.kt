@@ -2,6 +2,9 @@ package `is`.xyz.mpv.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
@@ -37,9 +40,12 @@ fun PlayerTopBar(
         colors = listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)
     )
     Box(
-        modifier = modifier.background(brush)
+        modifier = modifier
+            .background(brush)
+            .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         TopAppBar(
+            windowInsets = WindowInsets(0, 0, 0, 0),
             title = {
                 Text(
                     text = if (!title.isNullOrBlank()) title else "PCX Player",
