@@ -113,7 +113,7 @@ fun PlayScreen(
 
     var isLocked by remember { mutableStateOf(false) }
     var lockControlsVisible by remember { mutableStateOf(false) }
-    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsVisible by remember { mutableStateOf(false) }
     var activeDialog by remember { mutableStateOf(TrackDialogType.NONE) }
     var indicator by remember { mutableStateOf<GestureIndicator?>(null) }
     val isLongPressActive = remember { mutableStateOf(false) }
@@ -127,8 +127,9 @@ fun PlayScreen(
     val density = LocalDensity.current
 
     fun resetHideTimer() {
-        if (isLocked) return
+        if (isLocked || !controlsVisible) return
         hideJob.job?.cancel()
+        if (uiState.isPlaying != true) return
         hideJob.job = coroutineScope.launch {
             delay(5_000)
             controlsVisible = false
@@ -164,14 +165,23 @@ fun PlayScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        resetHideTimer()
-    }
-
     LaunchedEffect(activeDialog) {
         if (activeDialog != TrackDialogType.NONE) {
             hideJob.job?.cancel()
         }
+    }
+
+    LaunchedEffect(uiState.isPlaying) {
+        if (uiState.isPlaying == true && controlsVisible) {
+            resetHideTimer()
+        } else {
+            hideJob.job?.cancel()
+        }
+    }
+
+    LaunchedEffect(uiState.currentFileName) {
+        hideJob.job?.cancel()
+        controlsVisible = false
     }
 
     BackHandler(enabled = activeDialog != TrackDialogType.NONE) {

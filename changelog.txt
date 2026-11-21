@@ -559,3 +559,18 @@ and throttled position saving
 
 *refactor: simplify decoder mode configuration
 
+
+21.11.2026
+
+*feat(player): add renderer and advanced decoder settings, update playback profiles
+Move playback profile selection from VideoSettingsScreen to DecoderSettingsScreen
+Add settings for video renderer (GPU / GPU-next), fast decode, and debanding
+Update MpvBuiltInProfiles with explicit scaling configuration
+Wire renderer, debanding, and fast decode through PlayerViewModel initialization
+Enhance surface lifecycle release handling in MpvSurfaceView and VideoSurface
+
+*Remove CUSTOM placeholder playback profile
+
+*refined the status bar and player ui gap
+
+*Player UI: hide controls on load, keep visible while paused
