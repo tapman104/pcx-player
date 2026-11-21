@@ -41,31 +41,17 @@ object MpvBuiltInProfiles {
         videoDownscale = null,
     )
 
-    // PLACEHOLDER: Custom is reserved for future individually configurable playback
-    // settings (scale, debanding, interpolation, etc). There is no persisted per-field
-    // storage for those yet, so CUSTOM currently applies the exact same defaults as
-    // MPV_DEFAULT and behaves identically to it. Do not treat this as working
-    // customization until individual settings are wired up to real storage.
-    val CUSTOM = MpvProfile(
-        id = "custom",
-        name = "Custom",
-        description = "Reserved for individually configured playback settings (not yet implemented — currently behaves like MPV Default)",
-        videoScale = null,
-        videoDownscale = null,
-    )
-
     val ALL: List<MpvProfile> = listOf(
         MPV_DEFAULT,
         FAST,
         BALANCED,
         HIGH_QUALITY,
-        CUSTOM,
     )
 
     fun fromId(id: String?): MpvProfile {
         return ALL.firstOrNull { it.id == id } ?: when (id) {
             "mobile_performance" -> FAST
-            "default" -> MPV_DEFAULT
+            "default", "custom" -> MPV_DEFAULT
             else -> MPV_DEFAULT
         }
     }
