@@ -102,10 +102,19 @@ fun HomeScreen(
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
 
-    var filterState by rememberSaveable(stateSaver = LibraryFilterStateSaver) {
-        mutableStateOf(LibraryFilterState())
+    val appContext = LocalContext.current.applicationContext
+    val filterPreferences = remember(appContext) {
+        LibraryFilterPreferences(appContext)
     }
-    var isFilterMenuOpen by remember { mutableStateOf(false) }
+    var filterState by rememberSaveable(stateSaver = LibraryFilterStateSaver) {
+        mutableStateOf(filterPreferences.load())
+    }
+
+    // Persist each change, including Reset, so the selection survives app relaunch.
+    LaunchedEffect(filterState) {
+        filterPreferences.save(filterState)
+    }
+    var isFilterSheetOpen by remember { mutableStateOf(false) }
     var viewMode by rememberSaveable { mutableStateOf(LibraryViewMode.GRID) }
     var activeMenuVideo by remember { mutableStateOf<MediaFile?>(null) }
     var renameDialogVideoId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -289,23 +298,12 @@ fun HomeScreen(
                                 contentDescription = "Search",
                             )
                         }
-                        Box {
-                            IconButton(onClick = { isFilterMenuOpen = true }) {
-                                Icon(
-                                    imageVector = Icons.Filled.FilterList,
-                                    contentDescription = "Filter and sort",
-                                    tint = if (!filterState.isDefault) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        LocalContentColor.current
-                                    },
-                                )
-                            }
-                            LibraryFilterMenu(
-                                expanded = isFilterMenuOpen,
-                                filterState = filterState,
-                                onFilterChange = { filterState = it },
-                                onDismiss = { isFilterMenuOpen = false },
+                        IconButton(onClick = { isFilterSheetOpen = true }) {
+                            Icon(
+                                imageVector = Icons.Filled.FilterList,
+                                contentDescription = "Filter and sort",
+                                tint = if (!filterState.isDefault) MaterialTheme.colorScheme.primary
+                                else LocalContentColor.current,
                             )
                         }
                         IconButton(
@@ -510,6 +508,13 @@ fun HomeScreen(
             },
         )
     }
+
+    LibraryFilterSheet(
+        visible = isFilterSheetOpen,
+        filterState = filterState,
+        onFilterChange = { filterState = it },
+        onDismiss = { isFilterSheetOpen = false },
+    )
 }
 
 @Composable
@@ -725,4 +730,5 @@ private fun FloatingPillNav(
             }
         }
     }
+
 }

@@ -79,6 +79,8 @@ fun PlayScreen(
     onOpenFileClick: (() -> Unit)? = null,
     onBackClick: (() -> Unit)? = null,
     onControlsVisibilityChanged: ((Boolean) -> Unit)? = null,
+    isPipMode: Boolean = false,
+    onPipClick: (() -> Unit)? = null,
     viewModel: PlayerViewModel = viewModel(
         factory = PlayerViewModel.factory(
             LocalContext.current
@@ -127,12 +129,20 @@ fun PlayScreen(
     val density = LocalDensity.current
 
     fun resetHideTimer() {
-        if (isLocked || !controlsVisible) return
+        if (isPipMode || isLocked || !controlsVisible) return
         hideJob.job?.cancel()
         if (uiState.isPlaying != true) return
         hideJob.job = coroutineScope.launch {
             delay(5_000)
             controlsVisible = false
+        }
+    }
+
+    LaunchedEffect(isPipMode) {
+        if (isPipMode) {
+            activeDialog = TrackDialogType.NONE
+            controlsVisible = false
+            indicator = null
         }
     }
 
@@ -156,12 +166,18 @@ fun PlayScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, isLocked) {
-        val effectiveControlsVisible = !isLocked && controlsVisible
-        onControlsVisibilityChanged?.invoke(effectiveControlsVisible)
-        if (!effectiveControlsVisible) {
+    LaunchedEffect(controlsVisible, isLocked, isPipMode) {
+        if (isPipMode) {
+            onControlsVisibilityChanged?.invoke(false)
             topBarHeight = 0.dp
             bottomBarHeight = 0.dp
+        } else {
+            val effectiveControlsVisible = !isLocked && controlsVisible
+            onControlsVisibilityChanged?.invoke(effectiveControlsVisible)
+            if (!effectiveControlsVisible) {
+                topBarHeight = 0.dp
+                bottomBarHeight = 0.dp
+            }
         }
     }
 
@@ -184,12 +200,12 @@ fun PlayScreen(
         controlsVisible = false
     }
 
-    BackHandler(enabled = activeDialog != TrackDialogType.NONE) {
+    BackHandler(enabled = !isPipMode && activeDialog != TrackDialogType.NONE) {
         activeDialog = TrackDialogType.NONE
         resetHideTimer()
     }
 
-    BackHandler(enabled = isLocked) {
+    BackHandler(enabled = !isPipMode && isLocked) {
     }
 
     val handleBack: () -> Unit = onBackClick ?: {
@@ -211,8 +227,9 @@ fun PlayScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Mid layer: unified gesture surface
-        Box(
+        if (!isPipMode) {
+            // Mid layer: unified gesture surface
+            Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(top = topBarHeight, bottom = bottomBarHeight)
@@ -519,7 +536,7 @@ fun PlayScreen(
                 activeDialog = TrackDialogType.NONE
                 resetHideTimer()
             },
-            isPipModeActive = false,
+            isPipModeActive = isPipMode,
             onLockClick = {
                 isLocked = true
                 lockControlsVisible = false
@@ -528,7 +545,8 @@ fun PlayScreen(
                 hideJob.job?.cancel()
             },
             onPipModeClick = {
-                // TODO: implement
+                activeDialog = TrackDialogType.NONE
+                onPipClick?.invoke()
             },
             decoderMode = decoderMode,
             onDecoderModeChange = { mode ->
@@ -584,6 +602,7 @@ fun PlayScreen(
                     }
                 )
             }
+        }
         }
     }
 }

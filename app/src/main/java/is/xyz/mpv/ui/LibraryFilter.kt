@@ -1,21 +1,40 @@
 package `is`.xyz.mpv.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import `is`.xyz.mpv.feature.library.MediaFile
 
@@ -96,106 +115,115 @@ fun applyLibraryFilter(videos: List<MediaFile>, filter: LibraryFilterState): Lis
     return if (filter.sortOrder == SortOrder.DESCENDING) sorted.reversed() else sorted
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryFilterMenu(
-    expanded: Boolean,
+fun LibraryFilterSheet(
+    visible: Boolean,
     filterState: LibraryFilterState,
     onFilterChange: (LibraryFilterState) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    DropdownMenu(
-        expanded = expanded,
+    if (!visible) return
+
+    val screenHeight = LocalConfiguration.current.screenHeightDp.dp
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        dragHandle = { BottomSheetDefaults.DragHandle() },
     ) {
-        Text(
-            text = "Sort by",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        SortBy.entries.forEach { option ->
-            FilterMenuRow(
-                label = option.label,
-                selected = filterState.sortBy == option,
-                onClick = { onFilterChange(filterState.copy(sortBy = option)) },
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = screenHeight * 0.62f)
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Filter & sort", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Choose how your library is organized",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close filter")
+                }
+            }
+
+            FilterSectionTitle("Sort by")
+            SortBy.entries.forEach { option ->
+                FilterChoiceRow(option.label, filterState.sortBy == option) {
+                    onFilterChange(filterState.copy(sortBy = option))
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            FilterSectionTitle("Order")
+            SortOrder.entries.forEach { option ->
+                FilterChoiceRow(option.label, filterState.sortOrder == option) {
+                    onFilterChange(filterState.copy(sortOrder = option))
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            FilterSectionTitle("Duration")
+            DurationFilter.entries.forEach { option ->
+                FilterChoiceRow(option.label, filterState.durationFilter == option) {
+                    onFilterChange(filterState.copy(durationFilter = option))
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = { onFilterChange(LibraryFilterState()) }, enabled = !filterState.isDefault) {
+                    Text("Reset")
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                Button(onClick = onDismiss) { Text("Done") }
+            }
         }
-
-        Divider(modifier = Modifier.padding(vertical = 4.dp))
-
-        Text(
-            text = "Sort order",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        SortOrder.entries.forEach { option ->
-            FilterMenuRow(
-                label = option.label,
-                selected = filterState.sortOrder == option,
-                onClick = { onFilterChange(filterState.copy(sortOrder = option)) },
-            )
-        }
-
-        Divider(modifier = Modifier.padding(vertical = 4.dp))
-
-        Text(
-            text = "Duration",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        DurationFilter.entries.forEach { option ->
-            FilterMenuRow(
-                label = option.label,
-                selected = filterState.durationFilter == option,
-                onClick = { onFilterChange(filterState.copy(durationFilter = option)) },
-            )
-        }
-
-        Divider(modifier = Modifier.padding(vertical = 4.dp))
-
-        DropdownMenuItem(
-            text = {
-                Text(
-                    text = "Reset",
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            },
-            onClick = { onFilterChange(LibraryFilterState()) },
-        )
     }
 }
 
 @Composable
-private fun FilterMenuRow(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    DropdownMenuItem(
-        text = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.width(20.dp)) {
-                    if (selected) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.width(18.dp),
-                        )
-                    }
-                }
-                Text(
-                    text = label,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-            }
-        },
-        onClick = onClick,
+private fun FilterSectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
     )
+}
+
+@Composable
+private fun FilterChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f).padding(start = 8.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+            else MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }
