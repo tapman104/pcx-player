@@ -166,18 +166,15 @@ fun PlayScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, isLocked, isPipMode) {
-        if (isPipMode) {
-            onControlsVisibilityChanged?.invoke(false)
+    LaunchedEffect(controlsVisible, isLocked) {
+        val effectiveControlsVisible = !isLocked && controlsVisible
+        if (effectiveControlsVisible) {
+            onControlsVisibilityChanged?.invoke(true)
+        } else {
             topBarHeight = 0.dp
             bottomBarHeight = 0.dp
-        } else {
-            val effectiveControlsVisible = !isLocked && controlsVisible
-            onControlsVisibilityChanged?.invoke(effectiveControlsVisible)
-            if (!effectiveControlsVisible) {
-                topBarHeight = 0.dp
-                bottomBarHeight = 0.dp
-            }
+            delay(800)
+            onControlsVisibilityChanged?.invoke(false)
         }
     }
 

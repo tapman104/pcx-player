@@ -574,3 +574,10 @@ Enhance surface lifecycle release handling in MpvSurfaceView and VideoSurface
 *refined the status bar and player ui gap
 
 *Player UI: hide controls on load, keep visible while paused
+
+
+22.11.2026
+
+*feat: implement native Picture-in-Picture support and library filter improvements
+
+*Player: stagger system bar hide 800ms after controls hide

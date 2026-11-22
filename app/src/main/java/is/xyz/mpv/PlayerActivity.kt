@@ -121,9 +121,9 @@ class PlayerActivity : ComponentActivity() {
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         if (visible) {
-            insetsController.show(WindowInsetsCompat.Type.navigationBars())
+            insetsController.show(WindowInsetsCompat.Type.systemBars())
         } else {
-            insetsController.hide(WindowInsetsCompat.Type.navigationBars())
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
         }
     }
 
