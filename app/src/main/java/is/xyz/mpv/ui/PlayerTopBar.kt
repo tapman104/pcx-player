@@ -2,27 +2,28 @@ package `is`.xyz.mpv.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Subtitles
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerTopBar(
     title: String?,
@@ -41,76 +42,64 @@ fun PlayerTopBar(
         modifier = modifier
             .background(brush)
     ) {
-        TopAppBar(
-            windowInsets = WindowInsets(0, 0, 0, 0),
-            title = {
-                Text(
-                    text = if (!title.isNullOrBlank()) title else "PCX Player",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 28.dp)
+                .height(48.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBackClick) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
                 )
-            },
-            navigationIcon = {
-                IconButton(onClick = onBackClick) {
+            }
+            Text(
+                text = if (!title.isNullOrBlank()) title else "PCX Player",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                modifier = Modifier.weight(1f)
+            )
+            if (onAudioTrackClick != null) {
+                IconButton(onClick = onAudioTrackClick, enabled = isEngineReady) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
+                        imageVector = Icons.Filled.Audiotrack,
+                        contentDescription = "Audio track",
+                        tint = if (isEngineReady) Color.White else Color.Gray
+                    )
+                }
+            }
+            if (onSubtitleTrackClick != null) {
+                IconButton(onClick = onSubtitleTrackClick, enabled = isEngineReady) {
+                    Icon(
+                        imageVector = Icons.Filled.Subtitles,
+                        contentDescription = "Subtitle track",
+                        tint = if (isEngineReady) Color.White else Color.Gray
+                    )
+                }
+            }
+            if (onMoreClick != null) {
+                IconButton(onClick = onMoreClick) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = "More options",
                         tint = Color.White
                     )
                 }
-            },
-            actions = {
-                if (onAudioTrackClick != null) {
-                    IconButton(
-                        onClick = onAudioTrackClick,
-                        enabled = isEngineReady
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Audiotrack,
-                            contentDescription = "Audio track",
-                            tint = if (isEngineReady) Color.White else Color.Gray
-                        )
-                    }
+            }
+            if (onOpenFileClick != null) {
+                IconButton(onClick = onOpenFileClick) {
+                    Icon(
+                        imageVector = Icons.Filled.FolderOpen,
+                        contentDescription = "Open video file",
+                        tint = Color.White
+                    )
                 }
-                if (onSubtitleTrackClick != null) {
-                    IconButton(
-                        onClick = onSubtitleTrackClick,
-                        enabled = isEngineReady
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Subtitles,
-                            contentDescription = "Subtitle track",
-                            tint = if (isEngineReady) Color.White else Color.Gray
-                        )
-                    }
-                }
-                if (onMoreClick != null) {
-                    IconButton(onClick = onMoreClick) {
-                        Icon(
-                            imageVector = Icons.Filled.MoreVert,
-                            contentDescription = "More options",
-                            tint = Color.White
-                        )
-                    }
-                }
-                if (onOpenFileClick != null) {
-                    IconButton(onClick = onOpenFileClick) {
-                        Icon(
-                            imageVector = Icons.Filled.FolderOpen,
-                            contentDescription = "Open video file",
-                            tint = Color.White
-                        )
-                    }
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent,
-                titleContentColor = Color.White,
-                navigationIconContentColor = Color.White,
-                actionIconContentColor = Color.White
-            )
-        )
+            }
+        }
     }
 }
