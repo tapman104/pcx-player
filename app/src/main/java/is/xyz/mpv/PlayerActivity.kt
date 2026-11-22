@@ -31,6 +31,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
@@ -50,6 +51,7 @@ class PlayerActivity : ComponentActivity() {
 
     private var areControlsVisible: Boolean = true
     private val isPipMode = mutableStateOf(false)
+    private var hideSystemBarsJob: kotlinx.coroutines.Job? = null
 
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -120,10 +122,14 @@ class PlayerActivity : ComponentActivity() {
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        hideSystemBarsJob?.cancel()
         if (visible) {
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         } else {
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            hideSystemBarsJob = lifecycleScope.launch {
+                delay(800)
+                insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
@@ -141,7 +147,11 @@ class PlayerActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode.value = isInPictureInPictureMode
-        if (!isInPictureInPictureMode) {
+        if (isInPictureInPictureMode) {
+            // Hide immediately on PiP entry, no delay
+            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
             setSystemBarsVisible(areControlsVisible)
             applyOrientation(viewModel.orientationState.value)
         }

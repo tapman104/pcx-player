@@ -168,13 +168,10 @@ fun PlayScreen(
 
     LaunchedEffect(controlsVisible, isLocked) {
         val effectiveControlsVisible = !isLocked && controlsVisible
-        if (effectiveControlsVisible) {
-            onControlsVisibilityChanged?.invoke(true)
-        } else {
+        onControlsVisibilityChanged?.invoke(effectiveControlsVisible)
+        if (!effectiveControlsVisible) {
             topBarHeight = 0.dp
             bottomBarHeight = 0.dp
-            delay(800)
-            onControlsVisibilityChanged?.invoke(false)
         }
     }
 

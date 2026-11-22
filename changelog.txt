@@ -581,3 +581,5 @@ Enhance surface lifecycle release handling in MpvSurfaceView and VideoSurface
 *feat: implement native Picture-in-Picture support and library filter improvements
 
 *Player: stagger system bar hide 800ms after controls hide
+
+*Player: move system bar hide delay to Activity, fix PiP immediate hide
