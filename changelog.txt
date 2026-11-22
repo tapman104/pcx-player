@@ -583,3 +583,5 @@ Enhance surface lifecycle release handling in MpvSurfaceView and VideoSurface
 *Player: stagger system bar hide 800ms after controls hide
 
 *Player: move system bar hide delay to Activity, fix PiP immediate hide
+
+*PlayerTopBar: remove manual status bar inset padding

@@ -3,8 +3,6 @@ package `is`.xyz.mpv.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
@@ -42,7 +40,6 @@ fun PlayerTopBar(
     Box(
         modifier = modifier
             .background(brush)
-            .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         TopAppBar(
             windowInsets = WindowInsets(0, 0, 0, 0),
