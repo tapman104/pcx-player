@@ -7,8 +7,11 @@ import `is`.xyz.mpv.state.VideoDisplayMode
 import `is`.xyz.mpv.state.VideoDisplayState
 import `is`.xyz.mpv.state.VideoTransform
 import java.math.BigDecimal
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
@@ -55,6 +58,9 @@ open class MpvEngine(
 
     private val _hwdecCurrent = MutableStateFlow<String?>(null)
     val hwdecCurrent: StateFlow<String?> = _hwdecCurrent.asStateFlow()
+
+    private val _playbackEnded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val playbackEnded: SharedFlow<Unit> = _playbackEnded.asSharedFlow()
 
     val isReady: Boolean get() = _status.value is EngineStatus.Ready
 
@@ -324,6 +330,14 @@ open class MpvEngine(
     override fun eventProperty(property: String, value: String) {
         if (property == "hwdec-current") {
             _hwdecCurrent.value = value
+        }
+    }
+
+    override fun event(eventId: Int) {
+        if (eventId == MPVLib.MpvEvent.MPV_EVENT_END_FILE) {
+            if (MPVLib.getPropertyBoolean("eof-reached") == true) {
+                _playbackEnded.tryEmit(Unit)
+            }
         }
     }
 

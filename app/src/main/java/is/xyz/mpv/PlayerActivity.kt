@@ -79,6 +79,7 @@ class PlayerActivity : ComponentActivity() {
 
         collectOrientationState()
         collectPipState()
+        collectPlaybackEnded()
 
         setContent {
             PotatoTheme {
@@ -241,6 +242,16 @@ class PlayerActivity : ComponentActivity() {
                     ui.isPlaying to (orientation.videoWidth to orientation.videoHeight)
                 }.collect {
                     updatePipParams()
+                }
+            }
+        }
+    }
+
+    private fun collectPlaybackEnded() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.playbackEnded.collect {
+                    finish()
                 }
             }
         }

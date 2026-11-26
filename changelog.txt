@@ -605,3 +605,5 @@ Enhance surface lifecycle release handling in MpvSurfaceView and VideoSurface
 - Demote surface attach/detach from WARN to DEBUG
 - Redact file paths from pending-file warning log
 - Increase AppLogViewerScreen poll interval from 1s to 5s
+
+*fix(player): close only on real end-of-file, not every file-end event

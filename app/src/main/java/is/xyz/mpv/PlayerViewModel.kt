@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -126,6 +127,8 @@ class PlayerViewModel(
     // Threading contract: Engine lifecycle, playback, and surface operations must execute on
     // the same designated thread (currently the Android main thread / viewModelScope).
     val engine: MpvEngine = MpvEngine(appContext, eventHandler)
+
+    val playbackEnded: SharedFlow<Unit> = engine.playbackEnded
 
     val trackState: StateFlow<TrackState> = eventHandler.trackState
 
