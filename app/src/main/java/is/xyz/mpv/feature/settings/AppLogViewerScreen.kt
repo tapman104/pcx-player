@@ -103,7 +103,7 @@ fun AppLogViewerScreen(
             if (previewLogs != logs) {
                 logs = previewLogs
             }
-            delay(1000L)
+            delay(5_000L)
         }
     }
 

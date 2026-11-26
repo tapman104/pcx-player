@@ -236,7 +236,7 @@ class EngineEventHandler : MPVLib.EventObserver {
 
     private fun handleAid(value: String) {
         val audioId = value.toIntOrNull() // "no" or invalid becomes null
-        Log.i(TAG, "Audio track changed (aid): raw='$value', resolvedId=$audioId")
+        Log.d(TAG, "Audio track changed (aid): raw='$value', resolvedId=$audioId")
         _trackState.update { current ->
             val updatedAudio = current.audioTracks.map { track ->
                 track.copy(isSelected = (audioId != null && track.id == audioId))
@@ -250,7 +250,7 @@ class EngineEventHandler : MPVLib.EventObserver {
 
     private fun handleSid(value: String) {
         val subId = value.toIntOrNull() // "no" or invalid becomes null
-        Log.i(TAG, "Subtitle track changed (sid): raw='$value', resolvedId=$subId")
+        Log.d(TAG, "Subtitle track changed (sid): raw='$value', resolvedId=$subId")
         _trackState.update { current ->
             val updatedSubs = current.subtitleTracks.map { track ->
                 track.copy(isSelected = (subId != null && track.id == subId))

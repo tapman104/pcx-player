@@ -203,7 +203,7 @@ open class MpvEngine(
      * awaiting surface attachment while the engine is Ready, it is loaded immediately.
      */
     private fun attachSurface(surface: Surface) {
-        Log.w(TAG, "attaching surface")
+        Log.d(TAG, "attaching surface")
         MPVLib.attachSurface(surface)
         surfaceAttachmentState = SurfaceAttachmentState.Attached
         Log.d(TAG, "attachSurface: surface attached")
@@ -350,7 +350,7 @@ open class MpvEngine(
             loadFile(filePath)
         } else {
             if (pendingFilePath != null) {
-                Log.w(TAG, "Pending file '$pendingFilePath' discarded before load; overwriting with '$filePath'")
+                Log.w(TAG, "Pending file discarded; overwriting with new request")
             }
             pendingFilePath = filePath
         }
@@ -520,7 +520,7 @@ open class MpvEngine(
 
     fun onSurfaceDestroyed() {
         Log.d(TAG, "onSurfaceDestroyed: attachment=$surfaceAttachmentState, isReady=$isReady")
-        Log.w(TAG, "detaching surface")
+        Log.d(TAG, "detaching surface")
         pendingSurface = null
         if (surfaceAttachmentState !is SurfaceAttachmentState.Attached) return
         if (isReady) {

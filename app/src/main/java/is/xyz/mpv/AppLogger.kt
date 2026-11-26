@@ -1,5 +1,6 @@
 package `is`.xyz.mpv
 
+import com.potato.player.BuildConfig
 import android.content.Context
 import java.io.ByteArrayInputStream
 import java.io.BufferedWriter
@@ -158,6 +159,7 @@ object AppLogger {
     }
 
     fun log(severity: LogSeverity, tag: String, message: String) {
+        if (!BuildConfig.DEBUG && severity == LogSeverity.DEBUG) return
         val sanitized = redact(message)
         val timestamp = System.currentTimeMillis()
         var scheduleWrite = false
@@ -331,7 +333,9 @@ object AppLogger {
     }
 
     fun logMpv(prefix: String, level: Int, text: String) {
-        if (level >= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_V) return
+        val threshold = if (BuildConfig.DEBUG) MPVLib.MpvLogLevel.MPV_LOG_LEVEL_V
+                        else MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN
+        if (level > threshold) return
 
         val severity = when (level) {
             MPVLib.MpvLogLevel.MPV_LOG_LEVEL_FATAL,

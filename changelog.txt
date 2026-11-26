@@ -587,3 +587,21 @@ Enhance surface lifecycle release handling in MpvSurfaceView and VideoSurface
 *PlayerTopBar: remove manual status bar inset padding
 
 *PlayerTopBar: fix top bar position below status bar
+
+
+26.11.2026
+
+*perf: reduce battery drain and tighten release logging
+
+- Remove while(true) polling loop in PlayerBottomBarHost; use collectAsState()
+- Gate progress flow collection behind controlsVisible to stop UI updates when controls are hidden
+- Skip Room position writes when playback is paused
+- Increase position save interval from 5s to 30s
+- Flush position on pause to prevent stale resume point
+- Drop DEBUG logs in release builds via AppLogger.log()
+- Restrict mpv log threshold to WARN and above in release builds
+- Fix mpv log threshold comparison (>= → >) to correctly include WARN level
+- Demote aid/sid track change logs from INFO to DEBUG
+- Demote surface attach/detach from WARN to DEBUG
+- Redact file paths from pending-file warning log
+- Increase AppLogViewerScreen poll interval from 1s to 5s

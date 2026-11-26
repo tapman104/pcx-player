@@ -430,6 +430,7 @@ fun PlayScreen(
                 playbackProgressFlow = viewModel.playbackProgress,
                 isEnabled = uiState.isEngineReady,
                 displayModeFlow = viewModel.displayMode,
+                controlsVisible = controlsVisible,
                 onSeek = { pos ->
                     viewModel.seekTo(pos)
                     controlsVisible = true
@@ -611,6 +612,7 @@ private fun PlayerBottomBarHost(
     playbackProgressFlow: StateFlow<PlaybackProgress>,
     isEnabled: Boolean,
     displayModeFlow: StateFlow<VideoDisplayMode>,
+    controlsVisible: Boolean,
     onSeek: (Double) -> Unit,
     onSeekStarted: (() -> Unit)? = null,
     onRotateClick: (() -> Unit)? = null,
@@ -618,35 +620,25 @@ private fun PlayerBottomBarHost(
     modifier: Modifier = Modifier
 ) {
     val displayMode by displayModeFlow.collectAsState()
-
-    var progress by remember { mutableStateOf(playbackProgressFlow.value) }
-    var isSeeking by remember { mutableStateOf(false) }
-    var seekVersion by remember { mutableStateOf(0) }
-
-    LaunchedEffect(seekVersion) {
-        if (seekVersion > 0) {
-            // Post-seek delay: prevent stale engine progress from overwriting user seek position
-            delay(1000L)
-        }
-        while (true) {
-            if (!isSeeking) {
-                progress = playbackProgressFlow.value
-            }
-            delay(1000L)
-        }
+    val progress by if (controlsVisible) {
+        playbackProgressFlow.collectAsState()
+    } else {
+        remember { mutableStateOf(playbackProgressFlow.value) }
     }
+
+    var isSeeking by remember { mutableStateOf(false) }
+    var seekPosition by remember { mutableStateOf(0.0) }
 
     PlayerBottomBar(
         isEnabled = isEnabled,
-        positionSec = progress.positionSec,
+        positionSec = if (isSeeking) seekPosition else progress.positionSec,
         durationSec = progress.durationSec,
         onSeek = { targetPos ->
             isSeeking = false
-            progress = progress.copy(positionSec = targetPos)
-            seekVersion++
             onSeek(targetPos)
         },
         onSeekStarted = {
+            seekPosition = progress.positionSec
             isSeeking = true
             onSeekStarted?.invoke()
         },

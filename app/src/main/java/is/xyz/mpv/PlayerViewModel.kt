@@ -374,6 +374,7 @@ class PlayerViewModel(
             }.collect { (status, restoreState, progress) ->
                 if (status !is EngineStatus.Ready) return@collect
                 if (restoreState !is PlaybackRestoreState.Loaded) return@collect
+                if (uiState.value.isPlaying != true) return@collect
                 if (progress.positionSec <= 0.0) return@collect
 
                 val savedPos = restoreState.saved?.positionSec ?: 0.0
@@ -720,7 +721,7 @@ class PlayerViewModel(
 
     companion object {
         private const val TAG = "PlayerViewModel"
-        private const val POSITION_SAVE_INTERVAL_MS = 5_000L
+        private const val POSITION_SAVE_INTERVAL_MS = 30_000L
 
         fun factory(appContext: Context): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
